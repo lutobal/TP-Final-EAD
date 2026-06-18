@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Historial — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <h1>Historial</h1>
+
+    <section>
+      <h2>Buscar paciente</h2>
+      <form id="buscar-form" class="form-inline">
+        <input id="buscar-input" type="text" placeholder="Nombre, apellido o ID" />
+        <button type="submit" class="btn-primary">Buscar</button>
+      </form>
+      <div id="resultados-pacientes"></div>
+    </section>
+
+    <section id="seccion-historial" hidden>
+      <div class="historial-titulo-fila">
+        <h2 id="historial-titulo"></h2>
+        <button id="btn-eliminar-todo" class="btn-primary btn-small" type="button">
+          Eliminar todo el historial
+        </button>
+      </div>
+      <div id="lista-intentos"></div>
+    </section>
+  </main>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const pacienteActivo = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${pacienteActivo ? `Paciente: ${pacienteActivo.nombre} ${pacienteActivo.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página ---
+
+      let pacienteActual = null;
+      let nombresTests = {}; // { slug: nombre }, se completa al cargar /api/tests
+
+      async function cargarNombresTests() {
+        const respuesta = await fetch("/api/tests");
+        const tests = await respuesta.json();
+        tests.forEach((t) => (nombresTests[t.slug] = t.nombre));
+      }
+
+      function dibujarResultadosPacientes(pacientes) {
+        const contenedor = document.getElementById("resultados-pacientes");
+
+        if (pacientes.length === 0) {
+          contenedor.innerHTML = `<p class="page-subtitle">No se encontraron pacientes.</p>`;
+          return;
+        }
+
+        contenedor.innerHTML = pacientes
+          .map(
+            (p) => `
+            <div class="patient-row">
+              <span>#${p.id} — ${p.nombre} ${p.apellido}</span>
+              <button class="btn-primary btn-small" data-id="${p.id}" type="button">Ver historial</button>
+            </div>
+          `
+          )
+          .join("");
+
+        contenedor.querySelectorAll("button[data-id]").forEach((boton) => {
+          boton.addEventListener("click", () => {
+            const elegido = pacientes.find((p) => String(p.id) === boton.dataset.id);
+            cargarHistorial(elegido);
+          });
+        });
+      }
+
+      async function buscarPacientes(texto) {
+        const respuesta = await fetch(`/api/pacientes?buscar=${encodeURIComponent(texto)}`);
+        const pacientes = await respuesta.json();
+        dibujarResultadosPacientes(pacientes);
+      }
+
+      document.getElementById("buscar-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        buscarPacientes(document.getElementById("buscar-input").value.trim());
+      });
+
+      function claseClasificacion(clasificacion) {
+        if (clasificacion === "Normal") return "color-verde";
+        if (clasificacion === "Limítrofe" || clasificacion === "Leve") return "color-amarillo";
+        if (clasificacion === "Moderado") return "color-naranja";
+        if (clasificacion === "Patológico" || clasificacion === "Severo") return "color-rojo";
+        return "";
+      }
+
+      // Cada test guarda métricas con campos distintos (Stroop: una sola
+      // clasificación general; Faro: varias clasificaciones por separado).
+      // Esta función decide qué mostrar en el resumen según el test.
+      function resumenMetricas(testSlug, m) {
+        if (testSlug === "faro") {
+          const totalEncontrados = m.objetivos_izquierdos_encontrados + m.objetivos_derechos_encontrados;
+          return `
+            <p><strong>Objetivos encontrados:</strong> ${totalEncontrados} / ${m.cantidad_objetivos}
+               (izquierda: ${m.objetivos_izquierdos_encontrados}/${m.objetivos_izquierdos_totales} ·
+               derecha: ${m.objetivos_derechos_encontrados}/${m.objetivos_derechos_totales})</p>
+            <p><strong>Índice de omisión izquierda:</strong> ${m.indice_omision_izquierda_pct}%
+               (<span class="${claseClasificacion(m.clasificacion_omision)}">${m.clasificacion_omision}</span>) ·
+               <strong>Asimetría izquierda-derecha:</strong> ${m.asimetria_izq_der}
+               (<span class="${claseClasificacion(m.clasificacion_asimetria)}">${m.clasificacion_asimetria}</span>)</p>
+            <p><strong>Center of Cancellation:</strong> ${m.center_of_cancellation}
+               (<span class="${claseClasificacion(m.clasificacion_coc)}">${m.clasificacion_coc}</span>) ·
+               <strong>Cobertura espacial izquierda:</strong> ${m.cobertura_espacial_izquierda_pct}%
+               (<span class="${claseClasificacion(m.clasificacion_cobertura)}">${m.clasificacion_cobertura}</span>)</p>
+            <p><strong>Latencia primer objetivo:</strong> izquierda ${m.latencia_primer_objetivo_izquierdo_ms ?? "no encontró ninguno"} ms ·
+               derecha ${m.latencia_primer_objetivo_derecho_ms ?? "no encontró ninguno"} ms
+               ${
+                 m.clasificacion_latencia
+                   ? ` · ratio ${m.ratio_latencia_izq_der} (<span class="${claseClasificacion(m.clasificacion_latencia)}">${m.clasificacion_latencia}</span>)`
+                   : ""
+               }</p>
+          `;
+        }
+        if (testSlug === "tracking") {
+          return `
+            <p><strong>Duración:</strong> ${m.duracion_seg}s · <strong>Velocidad:</strong> ${m.velocidad}x · <strong>Complejidad:</strong> ${m.complejidad}</p>
+            <p><strong>Error promedio:</strong> ${m.error_promedio_px} px
+               (<span class="${claseClasificacion(m.clasificacion_error_promedio)}">${m.clasificacion_error_promedio}</span>) ·
+               <strong>Error máximo:</strong> ${m.error_maximo_px} px
+               (<span class="${claseClasificacion(m.clasificacion_error_maximo)}">${m.clasificacion_error_maximo}</span>)</p>
+            <p><strong>Variabilidad:</strong> ${m.desvio_estandar_px} px
+               (<span class="${claseClasificacion(m.clasificacion_variabilidad)}">${m.clasificacion_variabilidad}</span>) ·
+               <strong>Tiempo en zona:</strong> ${m.tiempo_en_zona_pct}%
+               (<span class="${claseClasificacion(m.clasificacion_tiempo_zona)}">${m.clasificacion_tiempo_zona}</span>)</p>
+            <p><strong>Clasificación global:</strong> ${m.puntaje_global} / 12
+               (<span class="${claseClasificacion(m.clasificacion_global)}">${m.clasificacion_global}</span>)</p>
+          `;
+        }
+        if (testSlug === "laberinto") {
+          return `
+            <p><strong>Resultado:</strong> ${m.completado ? `Completado en ${m.tiempo_total_seg}s` : `No completado (${m.tiempo_total_seg}s)`} ·
+               <strong>Complejidad:</strong> ${m.complejidad}</p>
+            <p><strong>Tiempo respecto al ideal:</strong> ${m.tiempo_respecto_ideal_pct}%
+               (<span class="${claseClasificacion(m.clasificacion_tiempo)}">${m.clasificacion_tiempo}</span>) ·
+               <strong>Choques:</strong> ${m.choques}
+               (<span class="${claseClasificacion(m.clasificacion_choques)}">${m.clasificacion_choques}</span>)</p>
+            <p><strong>Desviación:</strong> ${m.indice_desviacion}
+               (<span class="${claseClasificacion(m.clasificacion_desviacion)}">${m.clasificacion_desviacion}</span>) ·
+               <strong>Movimientos bruscos:</strong> ${m.movimientos_bruscos}
+               (<span class="${claseClasificacion(m.clasificacion_movimientos)}">${m.clasificacion_movimientos}</span>)</p>
+            <p><strong>Precisión del control:</strong> ${m.precision_control_pct}%
+               (<span class="${claseClasificacion(m.clasificacion_precision)}">${m.clasificacion_precision}</span>)</p>
+          `;
+        }
+        return `
+          <p><strong>Clasificación:</strong> <span class="${claseClasificacion(m.clasificacion)}">${m.clasificacion}</span></p>
+          <p><strong>Precisión:</strong> ${m.precision_porcentaje}% · <strong>Tiempo de reacción promedio:</strong> ${m.tiempo_reaccion_promedio_ms ?? "-"} ms</p>
+        `;
+      }
+
+      function dibujarDetalle(detalle) {
+        const filas = detalle
+          .map(
+            (d) => `
+            <tr>
+              <td>${d.numero_estimulo}</td>
+              <td>${d.estimulo}</td>
+              <td>${d.respuesta ?? "(sin respuesta)"}</td>
+              <td>${d.correcto ? "Sí" : "No"}</td>
+              <td>${d.tipo_error ?? "-"}</td>
+              <td>${d.rt_ms ?? "-"}</td>
+            </tr>
+          `
+          )
+          .join("");
+
+        return `
+          <table class="historial-detalle-tabla">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Estímulo</th>
+                <th>Respuesta</th>
+                <th>Correcto</th>
+                <th>Tipo de error</th>
+                <th>RT (ms)</th>
+              </tr>
+            </thead>
+            <tbody>${filas}</tbody>
+          </table>
+        `;
+      }
+
+      function dibujarIntentos(resultados) {
+        const contenedor = document.getElementById("lista-intentos");
+
+        if (resultados.length === 0) {
+          contenedor.innerHTML = `<p class="page-subtitle">Este paciente todavía no tiene resultados guardados.</p>`;
+          return;
+        }
+
+        contenedor.innerHTML = resultados
+          .map((r) => {
+            const m = r.metricas;
+            return `
+              <div class="historial-item" data-id="${r.id}">
+                <div class="historial-item-header">
+                  <strong>${nombresTests[r.test_slug] || r.test_slug}</strong>
+                  <span class="page-subtitle">${r.fecha} ${r.hora}</span>
+                </div>
+                ${resumenMetricas(r.test_slug, m)}
+                ${r.comentarios_medico ? `<p><strong>Comentario clínico:</strong> ${r.comentarios_medico}</p>` : ""}
+                <div class="historial-item-acciones">
+                  <button class="btn-primary btn-small" data-accion="detalle" type="button">Ver detalle</button>
+                  <button class="btn-primary btn-small" data-accion="eliminar" type="button">Eliminar este intento</button>
+                </div>
+                <div class="historial-item-detalle" hidden></div>
+              </div>
+            `;
+          })
+          .join("");
+
+        contenedor.querySelectorAll(".historial-item").forEach((item) => {
+          const id = item.dataset.id;
+          const contenedorDetalle = item.querySelector(".historial-item-detalle");
+
+          item.querySelector("[data-accion=detalle]").addEventListener("click", async (event) => {
+            if (!contenedorDetalle.hidden) {
+              contenedorDetalle.hidden = true;
+              event.target.textContent = "Ver detalle";
+              return;
+            }
+            const respuesta = await fetch(`/api/resultados/${id}`);
+            const resultado = await respuesta.json();
+            contenedorDetalle.innerHTML = dibujarDetalle(resultado.detalle);
+            contenedorDetalle.hidden = false;
+            event.target.textContent = "Ocultar detalle";
+          });
+
+          item.querySelector("[data-accion=eliminar]").addEventListener("click", async () => {
+            if (!confirm("¿Eliminar este intento? Esta acción no se puede deshacer.")) return;
+            await fetch(`/api/resultados/${id}`, { method: "DELETE" });
+            cargarHistorial(pacienteActual);
+          });
+        });
+      }
+
+      async function cargarHistorial(paciente) {
+        pacienteActual = paciente;
+        document.getElementById("historial-titulo").textContent =
+          `Historial de ${paciente.nombre} ${paciente.apellido}`;
+        document.getElementById("seccion-historial").hidden = false;
+
+        const respuesta = await fetch(`/api/resultados?paciente_id=${paciente.id}`);
+        const resultados = await respuesta.json();
+        dibujarIntentos(resultados);
+      }
+
+      document.getElementById("btn-eliminar-todo").addEventListener("click", async () => {
+        if (!pacienteActual) return;
+        if (
+          !confirm(
+            `¿Eliminar TODO el historial de ${pacienteActual.nombre} ${pacienteActual.apellido}? Esta acción no se puede deshacer.`
+          )
+        )
+          return;
+        await fetch(`/api/resultados?paciente_id=${pacienteActual.id}`, { method: "DELETE" });
+        cargarHistorial(pacienteActual);
+      });
+
+      async function inicializar() {
+        await cargarNombresTests();
+        buscarPacientes(""); // al entrar, mostramos todos los pacientes existentes
+
+        const pacienteIdPedido = new URLSearchParams(window.location.search).get("paciente_id");
+        if (pacienteIdPedido) {
+          const respuesta = await fetch(`/api/pacientes/${pacienteIdPedido}`);
+          if (respuesta.ok) {
+            const paciente = await respuesta.json();
+            cargarHistorial(paciente);
+          }
+        }
+      }
+
+      inicializar();
+    }
+  </script>
+</body>
+</html>

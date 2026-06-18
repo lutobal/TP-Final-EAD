@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pacientes — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <h1>Pacientes</h1>
+
+    <section>
+      <h2>Buscar paciente</h2>
+      <form id="buscar-form" class="form-inline">
+        <input id="buscar-input" type="text" placeholder="Nombre, apellido o ID" />
+        <button type="submit" class="btn-primary">Buscar</button>
+      </form>
+      <div id="resultados-lista"></div>
+    </section>
+
+    <section>
+      <button id="mostrar-crear" class="btn-primary" type="button">+ Crear paciente nuevo</button>
+      <p id="crear-error" class="error-box" hidden></p>
+      <p id="crear-exito" class="info-box" hidden></p>
+      <form id="crear-form" class="form" hidden>
+        <label for="crear-id">ID (numérico)</label>
+        <input id="crear-id" type="text" />
+
+        <label for="crear-nombre">Nombre</label>
+        <input id="crear-nombre" type="text" />
+
+        <label for="crear-apellido">Apellido</label>
+        <input id="crear-apellido" type="text" />
+
+        <label for="crear-fecha">Fecha de nacimiento (opcional)</label>
+        <input id="crear-fecha" type="date" />
+
+        <label for="crear-comentarios">Comentarios (opcional)</label>
+        <textarea id="crear-comentarios"></textarea>
+
+        <button type="submit" class="btn-primary">Crear paciente</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página ---
+
+      // Si se llegó acá desde un test que necesitaba un paciente activo
+      // (ver test-stroop.html), "volver" indica a qué test hay que regresar
+      // una vez elegido o creado el paciente.
+      const volverA = new URLSearchParams(window.location.search).get("volver");
+
+      function usarPaciente(pacienteElegido) {
+        sessionStorage.setItem("paciente", JSON.stringify(pacienteElegido));
+        if (volverA) {
+          window.location.href = `/pages/test-${volverA}.html`;
+        } else {
+          location.reload();
+        }
+      }
+
+      function dibujarResultados(pacientes) {
+        const contenedor = document.getElementById("resultados-lista");
+
+        if (pacientes.length === 0) {
+          contenedor.innerHTML = `<p class="page-subtitle">No se encontraron pacientes.</p>`;
+          return;
+        }
+
+        contenedor.innerHTML = pacientes
+          .map(
+            (p) => `
+            <div class="patient-row">
+              <span>#${p.id} — ${p.nombre} ${p.apellido}</span>
+              <span class="patient-row-actions">
+                <a class="btn-primary btn-small" href="/pages/paciente-detalle.html?id=${p.id}">Ver detalle</a>
+                <button class="btn-primary btn-small" data-id="${p.id}" type="button">Usar este paciente</button>
+              </span>
+            </div>
+          `
+          )
+          .join("");
+
+        contenedor.querySelectorAll("button[data-id]").forEach((boton) => {
+          boton.addEventListener("click", () => {
+            const elegido = pacientes.find((p) => String(p.id) === boton.dataset.id);
+            usarPaciente(elegido);
+          });
+        });
+      }
+
+      async function buscarPacientes(texto) {
+        const respuesta = await fetch(`/api/pacientes?buscar=${encodeURIComponent(texto)}`);
+        const pacientes = await respuesta.json();
+        dibujarResultados(pacientes);
+      }
+
+      document.getElementById("buscar-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        buscarPacientes(document.getElementById("buscar-input").value.trim());
+      });
+
+      buscarPacientes(""); // al entrar, mostramos todos los pacientes existentes
+
+      const crearForm = document.getElementById("crear-form");
+      const crearError = document.getElementById("crear-error");
+      const crearExito = document.getElementById("crear-exito");
+
+      document.getElementById("mostrar-crear").addEventListener("click", () => {
+        crearForm.hidden = !crearForm.hidden;
+        crearError.hidden = true;
+        crearExito.hidden = true;
+      });
+
+      if (new URLSearchParams(window.location.search).get("crear")) {
+        crearForm.hidden = false;
+      }
+
+      crearForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        crearError.hidden = true;
+        crearExito.hidden = true;
+
+        const nuevoPaciente = {
+          id: document.getElementById("crear-id").value.trim(),
+          nombre: document.getElementById("crear-nombre").value.trim(),
+          apellido: document.getElementById("crear-apellido").value.trim(),
+          fecha_nacimiento: document.getElementById("crear-fecha").value || null,
+          comentarios: document.getElementById("crear-comentarios").value.trim() || null,
+        };
+
+        const respuesta = await fetch("/api/pacientes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(nuevoPaciente),
+        });
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok) {
+          crearError.textContent = datos.detail;
+          crearError.hidden = false;
+          return;
+        }
+
+        crearExito.textContent = "Paciente creado correctamente.";
+        crearExito.hidden = false;
+        crearForm.reset();
+        crearForm.hidden = true;
+        buscarPacientes("");
+      });
+    }
+  </script>
+</body>
+</html>

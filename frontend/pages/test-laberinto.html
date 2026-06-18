@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laberinto con Acelerómetro — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <!-- Pantalla 1: se muestra solo si no hay paciente activo (sección 9.7) -->
+    <section id="screen-gate" hidden>
+      <h1>Antes de empezar</h1>
+      <p class="page-subtitle">Para realizar este test hace falta un paciente activo.</p>
+      <div class="form-inline">
+        <a class="btn-primary" href="/pages/pacientes.html?volver=laberinto">Seleccionar paciente existente</a>
+        <a class="btn-primary" href="/pages/pacientes.html?volver=laberinto&crear=1">Crear paciente nuevo</a>
+        <a class="btn-primary" href="/pages/test-detail.html?slug=laberinto">Cancelar</a>
+      </div>
+    </section>
+
+    <!-- Pantalla 2: instrucciones tipo carrusel -->
+    <section id="screen-instrucciones" hidden>
+      <div class="carousel-header">
+        <a href="/pages/test-detail.html?slug=laberinto" class="back-link">Salir</a>
+        <span id="carousel-titulo"></span>
+      </div>
+      <div id="carousel-contenido"></div>
+      <div id="carousel-visual" class="carousel-visual"></div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="carousel-nav">
+        <button id="carousel-anterior" class="btn-primary" type="button">← Anterior</button>
+        <button id="carousel-saltear" class="btn-primary" type="button">Saltear</button>
+        <button id="carousel-siguiente" class="btn-primary" type="button">Siguiente →</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 3: configuración -->
+    <section id="screen-config" hidden>
+      <h1>Configuración del test</h1>
+
+      <h2>Complejidad del laberinto</h2>
+      <div class="level-options">
+        <button class="level-option selected" data-complejidad="simple" type="button">
+          <strong>Simple</strong>
+          <span>Pocas paredes, recorrido amplio.</span>
+        </button>
+        <button class="level-option" data-complejidad="media" type="button">
+          <strong>Media</strong>
+          <span>Más paredes, recorrido más cerrado.</span>
+        </button>
+        <button class="level-option" data-complejidad="compleja" type="button">
+          <strong>Compleja</strong>
+          <span>Recorrido largo y con espacios más angostos.</span>
+        </button>
+      </div>
+
+      <h2>Tiempo máximo</h2>
+      <div class="form-inline">
+        <label for="config-tiempo-maximo">Segundos (30 a 300):</label>
+        <input id="config-tiempo-maximo" type="number" min="30" max="300" step="10" value="90" />
+      </div>
+
+      <button id="config-continuar" class="btn-primary" type="button">Iniciar</button>
+    </section>
+
+    <!-- Pantalla 4: el test en sí -->
+    <section id="screen-test" hidden>
+      <div class="laberinto-header">
+        <div class="laberinto-progreso" id="laberinto-progreso"></div>
+        <button id="btn-pausa" class="pause-button" type="button" aria-label="Pausar" title="Pausar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="page-subtitle">Sostené el control con las dos manos e inclinalo suavemente para mover la bolita hasta la meta.</p>
+
+      <div class="laberinto-test-area">
+        <div class="laberinto-canvas-wrap">
+          <canvas id="laberinto-canvas" width="820" height="460"></canvas>
+        </div>
+
+        <div class="laberinto-control-wrap">
+          <canvas id="laberinto-control-canvas" width="150" height="150"></canvas>
+          <p class="laberinto-control-caption">Control temporal: mové el mouse dentro del círculo para simular la inclinación.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pantalla 5: resultados -->
+    <section id="screen-resultados" hidden>
+      <h1>Resultados</h1>
+      <div id="resultados-resumen"></div>
+
+      <label for="comentario-clinico">Comentario clínico (opcional)</label>
+      <textarea id="comentario-clinico" class="form" style="width: 100%; max-width: 480px;"></textarea>
+
+      <div class="form-inline" id="acciones-resultado">
+        <button id="btn-guardar" class="btn-primary" type="button">Guardar resultado</button>
+        <button id="btn-descartar" class="btn-primary" type="button">Descartar resultado</button>
+      </div>
+      <p id="guardado-msg" class="info-box" hidden></p>
+      <div class="form-inline" id="acciones-post-guardado" hidden>
+        <a href="/pages/home.html" class="btn-primary">Volver al inicio</a>
+        <button id="btn-otro-intento" class="btn-primary" type="button">Realizar otro intento</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Overlay de pausa: tres opciones, igual al patrón del prototipo -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-overlay-box">
+      <h2>Test en pausa</h2>
+      <button id="pausa-reanudar" class="btn-primary" type="button">Reanudar</button>
+      <button id="pausa-reiniciar" class="btn-primary" type="button">Reiniciar</button>
+      <button id="pausa-menu" class="btn-primary" type="button">Volver al menú</button>
+    </div>
+  </div>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página: el test de Laberinto con Acelerómetro ---
+
+      function mostrarPantalla(idVisible) {
+        ["screen-gate", "screen-instrucciones", "screen-config", "screen-test", "screen-resultados"].forEach(
+          (id) => {
+            document.getElementById(id).hidden = id !== idVisible;
+          }
+        );
+      }
+
+      // ===== Instrucciones (carrusel) =====
+      const SLIDES = [
+        {
+          titulo: "Laberinto Virtual",
+          lineas: [
+            "Vas a controlar una bolita que se mueve dentro de un laberinto.",
+            "Para esto, sostené el control con las dos manos e inclinalo suavemente: el acelerómetro que tiene adentro detecta la inclinación y mueve la bolita en esa dirección.",
+          ],
+        },
+        {
+          titulo: "Cómo se mueve la bolita",
+          lineas: [
+            "Inclinar el control hacia un lado empuja la bolita hacia ese lado, como en un laberinto de juguete real.",
+            "Si dejás de inclinar, la bolita va frenando de a poco, no se detiene de golpe.",
+          ],
+        },
+        {
+          titulo: "Evitá las paredes",
+          lineas: [
+            "El laberinto tiene paredes. Cada vez que la bolita toca una, queda registrado como un choque.",
+          ],
+        },
+        {
+          titulo: "Llegá a la meta",
+          lineas: [
+            "El objetivo es llegar a la zona de meta (marcada en verde) en el menor tiempo posible, con la menor cantidad de choques.",
+          ],
+        },
+        {
+          titulo: "El botón de pausa",
+          lineas: [
+            "En cualquier momento podés pausar el test con el botón de pausa del control.",
+            "Al pausar aparecen tres opciones: Reanudar, Reiniciar o Volver al menú.",
+          ],
+        },
+        {
+          titulo: "¡Todo listo!",
+          lineas: [
+            "Cuando estés listo, presioná Iniciar.",
+          ],
+        },
+      ];
+      let slideActual = 0;
+
+      function dibujarVisual(i) {
+        if (i === 0) {
+          return `
+            <div class="laberinto-demo-stage">
+              <div class="laberinto-demo-consola" style="top: 45px; left: 85px;">
+                <div class="laberinto-demo-crosshair"></div>
+              </div>
+            </div>
+            <p class="stroop-example-label">Sostené el control con las dos manos</p>
+          `;
+        }
+        if (i === 1) {
+          return `
+            <div class="laberinto-demo-stage">
+              <div class="laberinto-demo-consola" style="top: 50px; left: 25px; transform: rotate(20deg);">
+                <div class="laberinto-demo-crosshair"></div>
+              </div>
+              <span class="laberinto-demo-flecha" style="top: 56px; left: 168px;">→</span>
+              <div class="laberinto-demo-bola" style="top: 65px; left: 225px;"></div>
+            </div>
+            <p class="stroop-example-label">Inclinás hacia un lado → la bolita se mueve hacia ese lado</p>
+          `;
+        }
+        if (i === 2) {
+          return `
+            <div class="laberinto-demo-stage">
+              <div class="laberinto-demo-pared" style="top: 0; left: 140px; width: 16px; height: 95px;"></div>
+              <div class="laberinto-demo-bola" style="top: 60px; left: 120px;"></div>
+            </div>
+            <p class="stroop-example-label color-rojo">Cada choque contra una pared queda registrado</p>
+          `;
+        }
+        if (i === 3) {
+          return `
+            <div class="laberinto-demo-stage">
+              <div class="laberinto-demo-bola" style="top: 100px; left: 40px;"></div>
+              <div class="laberinto-demo-meta" style="top: 50px; left: 200px; width: 50px; height: 50px;"></div>
+            </div>
+            <p class="stroop-example-label color-verde">Llegá a la zona verde con el menor tiempo y choques posibles</p>
+          `;
+        }
+        if (i === 4) {
+          return `
+            <div class="pause-example">
+              <div class="pause-example-icon">II</div>
+              <div class="pause-example-options">
+                <span class="pause-example-option bg-verde">Reanudar</span>
+                <span class="pause-example-option bg-rojo">Reiniciar</span>
+                <span class="pause-example-option bg-amarillo">Volver al menú</span>
+              </div>
+            </div>
+          `;
+        }
+        return `<div class="success-check">✓</div>`;
+      }
+
+      function mostrarSlide(i) {
+        slideActual = i;
+        const slide = SLIDES[i];
+        document.getElementById("carousel-titulo").textContent = `Paso ${i + 1} de ${SLIDES.length}`;
+        document.getElementById("carousel-contenido").innerHTML = `
+          <h2 class="carousel-slide-titulo">${slide.titulo}</h2>
+          <div class="carousel-slide-lineas">${slide.lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        `;
+        document.getElementById("carousel-visual").innerHTML = dibujarVisual(i);
+        document.getElementById("carousel-dots").innerHTML = SLIDES.map(
+          (_, idx) => `<span class="carousel-dot${idx === i ? " activo" : ""}"></span>`
+        ).join("");
+
+        document.getElementById("carousel-anterior").disabled = i === 0;
+        const esUltimo = i === SLIDES.length - 1;
+        document.getElementById("carousel-saltear").hidden = esUltimo;
+        document.getElementById("carousel-siguiente").textContent = esUltimo ? "Continuar" : "Siguiente →";
+      }
+
+      document.getElementById("carousel-anterior").addEventListener("click", () => {
+        if (slideActual > 0) mostrarSlide(slideActual - 1);
+      });
+      document.getElementById("carousel-saltear").addEventListener("click", () => {
+        mostrarSlide(SLIDES.length - 1);
+      });
+      document.getElementById("carousel-siguiente").addEventListener("click", () => {
+        if (slideActual < SLIDES.length - 1) {
+          mostrarSlide(slideActual + 1);
+        } else {
+          mostrarPantalla("screen-config");
+        }
+      });
+
+      // ===== Pantalla inicial: gate de paciente o instrucciones =====
+      if (!paciente) {
+        mostrarPantalla("screen-gate");
+      } else {
+        mostrarPantalla("screen-instrucciones");
+        mostrarSlide(0);
+      }
+
+      // ===== Configuración =====
+      let complejidadElegida = "simple";
+
+      document.querySelectorAll(".level-option").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          complejidadElegida = boton.dataset.complejidad;
+          document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+          boton.classList.add("selected");
+        });
+      });
+
+      let tiempoMaximoSeg = 90;
+
+      document.getElementById("config-continuar").addEventListener("click", () => {
+        let valor = parseInt(document.getElementById("config-tiempo-maximo").value, 10);
+        if (isNaN(valor)) valor = 90;
+        tiempoMaximoSeg = Math.min(300, Math.max(30, valor));
+
+        // El laberinto se genera una vez por intento (al tocar "Iniciar"),
+        // no en cada iniciarTest(): así "Reiniciar" desde la pausa repite
+        // el mismo laberinto, y "Realizar otro intento" (que vuelve a esta
+        // pantalla) genera uno nuevo.
+        maze = generarLaberinto(complejidadElegida);
+        iniciarTest();
+      });
+
+      // ===== El test en sí =====
+      const ANCHO_CANVAS = 820;
+      const ALTO_CANVAS = 460;
+      const RADIO_BOLA = 10;
+      const CONTROL_SIZE = 150; // ancho/alto del control circular (su propio canvas, fijo)
+      const RADIO_CONTROL = 65; // radio del círculo dentro del control = inclinación máxima
+      const ACELERACION_PX_S2 = 260;
+      const FRICCION_POR_SEG = 0.985; // se aplica escalada según el tiempo real entre frames
+      const REBOTE = 0.4;
+      const UMBRAL_MOVIMIENTO_BRUSCO = 0.55; // cambio de inclinación (normalizada -1..1) entre frames
+      const COOLDOWN_CHOQUE_MS = 250;
+      const COOLDOWN_BRUSCO_MS = 200;
+      const VELOCIDAD_IDEAL_PX_S = 60; // referencia de paso "sano" para calcular el tiempo ideal
+
+      // El laberinto se genera al azar cada vez que se inicia el test (no
+      // queda siempre igual). Cada "pared" son en realidad dos franjas que
+      // tocan los dos bordes de la pantalla (arriba y abajo), dejando un
+      // único hueco como paso — así nunca se la puede esquivar pasando
+      // por arriba o por abajo del todo. La altura de ese hueco varía
+      // respecto a la pared anterior con un desplazamiento mínimo (para
+      // que nunca quede a la misma altura, obligando siempre a corregir
+      // un poco) y máximo (para que esa corrección nunca sea un salto
+      // enorme de arriba a abajo) — así el movimiento dominante sigue
+      // siendo de izquierda a derecha.
+      const ANCHO_PARED = 26;
+      const MARGEN_BORDE_HUECO = 20;
+      const DESPLAZAMIENTO_MIN = 70;
+      const DESPLAZAMIENTO_MAX = 160;
+      const INICIO = { x: 50, y: 230 };
+      const META = { x: 760, y: 230, r: 28 };
+      // El rango horizontal (xMin/xMax) donde se reparten las paredes es
+      // propio de cada complejidad, no compartido: si fuera el mismo
+      // rango para todas, más paredes (niveles difíciles) significaba
+      // automáticamente menos espacio entre cada una. Acá Media y
+      // Compleja usan un rango más ancho a propósito, para que el
+      // espacio horizontal entre paredes no se achique tanto.
+      const COMPLEJIDAD_CONFIG = {
+        simple: { numParedes: 2, gapSize: 150, xMin: 180, xMax: 650 },
+        media: { numParedes: 3, gapSize: 115, xMin: 130, xMax: 700 },
+        compleja: { numParedes: 4, gapSize: 90, xMin: 90, xMax: 730 },
+      };
+
+      function generarLaberinto(complejidad) {
+        const { numParedes, gapSize, xMin, xMax } = COMPLEJIDAD_CONFIG[complejidad];
+        const centroMin = MARGEN_BORDE_HUECO + gapSize / 2;
+        const centroMax = ALTO_CANVAS - MARGEN_BORDE_HUECO - gapSize / 2;
+        const paredes = [];
+        const waypoints = [];
+        let centroAnterior = null;
+
+        for (let i = 0; i < numParedes; i++) {
+          const xBase = xMin + ((i + 1) * (xMax - xMin)) / (numParedes + 1);
+          const x = xBase + (Math.random() * 50 - 25);
+
+          let centro;
+          if (centroAnterior === null) {
+            centro = centroMin + Math.random() * (centroMax - centroMin);
+          } else {
+            const distancia = DESPLAZAMIENTO_MIN + Math.random() * (DESPLAZAMIENTO_MAX - DESPLAZAMIENTO_MIN);
+            const signo = Math.random() < 0.5 ? -1 : 1;
+            centro = Math.max(centroMin, Math.min(centroMax, centroAnterior + signo * distancia));
+          }
+          centroAnterior = centro;
+
+          const huecoInicio = centro - gapSize / 2;
+          const huecoFin = centro + gapSize / 2;
+
+          paredes.push({ x, y: 0, w: ANCHO_PARED, h: huecoInicio });
+          paredes.push({ x, y: huecoFin, w: ANCHO_PARED, h: ALTO_CANVAS - huecoFin });
+          waypoints.push({ x: x + ANCHO_PARED / 2, y: centro });
+        }
+
+        waypoints.sort((a, b) => a.x - b.x);
+
+        const puntos = [INICIO, ...waypoints, META];
+        let caminoIdealPx = 0;
+        for (let i = 1; i < puntos.length; i++) {
+          caminoIdealPx += Math.hypot(puntos[i].x - puntos[i - 1].x, puntos[i].y - puntos[i - 1].y);
+        }
+
+        return {
+          paredes,
+          inicio: INICIO,
+          meta: META,
+          caminoIdealPx: Math.round(caminoIdealPx),
+        };
+      }
+
+      const canvas = document.getElementById("laberinto-canvas");
+      const ctx = canvas.getContext("2d");
+      const controlCanvas = document.getElementById("laberinto-control-canvas");
+      const controlCtx = controlCanvas.getContext("2d");
+
+      let maze = null;
+      let offsetX = 0;
+      let offsetY = 0;
+      let bolaX = 0;
+      let bolaY = 0;
+      let velX = 0;
+      let velY = 0;
+      let tiltXAnterior = 0;
+      let tiltYAnterior = 0;
+      let pausado = false;
+      let testTerminado = false;
+      let completado = false;
+      let tInicioTest = null;
+      let tPausaAcumMs = 0;
+      let tPausaInicio = null;
+      let tiempoRestanteSeg = 0;
+      let tFrameAnteriorMs = null;
+      let timerInterval = null;
+      let animFrameId = null;
+      let choques = 0;
+      let movimientosBruscos = 0;
+      let distanciaRecorridaPx = 0;
+      let tiempoConErrorMs = 0;
+      let tUltimoChoqueMs = -Infinity;
+      let tUltimoBruscoMs = -Infinity;
+      let flashChoque = null; // {t: Date.now()} para el feedback visual breve
+      let muestras = []; // {tMs, x, y, tocandoPared} — una por frame, para el detalle por segundo
+      let tiempoTotalMs = null;
+      let metricasFinal = null;
+
+      // Control circular dedicado que hace de "acelerómetro temporal": el
+      // centro del círculo es el reposo, y la distancia/dirección del mouse
+      // respecto a ese centro es la inclinación simulada — separado del
+      // canvas del laberinto para que el paciente tenga un punto de
+      // referencia visible (a diferencia de antes, que usaba el centro
+      // invisible del canvas del laberinto).
+      function dibujarControl() {
+        const centro = CONTROL_SIZE / 2;
+        controlCtx.clearRect(0, 0, CONTROL_SIZE, CONTROL_SIZE);
+
+        controlCtx.fillStyle = "#eef1f5";
+        controlCtx.beginPath();
+        controlCtx.arc(centro, centro, RADIO_CONTROL, 0, Math.PI * 2);
+        controlCtx.fill();
+        controlCtx.strokeStyle = "#dde3ea";
+        controlCtx.lineWidth = 2;
+        controlCtx.stroke();
+
+        controlCtx.strokeStyle = "#9aa3ad";
+        controlCtx.lineWidth = 1;
+        controlCtx.beginPath();
+        controlCtx.moveTo(centro - 6, centro);
+        controlCtx.lineTo(centro + 6, centro);
+        controlCtx.moveTo(centro, centro - 6);
+        controlCtx.lineTo(centro, centro + 6);
+        controlCtx.stroke();
+
+        const px = centro + offsetX;
+        const py = centro + offsetY;
+        controlCtx.strokeStyle = "#2563eb";
+        controlCtx.lineWidth = 2;
+        controlCtx.beginPath();
+        controlCtx.moveTo(centro, centro);
+        controlCtx.lineTo(px, py);
+        controlCtx.stroke();
+
+        controlCtx.fillStyle = "#2563eb";
+        controlCtx.beginPath();
+        controlCtx.arc(px, py, 9, 0, Math.PI * 2);
+        controlCtx.fill();
+      }
+
+      controlCanvas.addEventListener("mousemove", (event) => {
+        if (pausado || testTerminado) return;
+        const rect = controlCanvas.getBoundingClientRect();
+        const centro = CONTROL_SIZE / 2;
+        let dx = event.clientX - rect.left - centro;
+        let dy = event.clientY - rect.top - centro;
+        const dist = Math.hypot(dx, dy);
+        if (dist > RADIO_CONTROL) {
+          dx = (dx / dist) * RADIO_CONTROL;
+          dy = (dy / dist) * RADIO_CONTROL;
+        }
+        offsetX = dx;
+        offsetY = dy;
+        dibujarControl();
+      });
+
+      controlCanvas.addEventListener("mouseleave", () => {
+        if (testTerminado) return;
+        offsetX = 0;
+        offsetY = 0;
+        dibujarControl();
+      });
+
+      function actualizarProgreso() {
+        document.getElementById("laberinto-progreso").textContent =
+          `Tiempo restante: ${tiempoRestanteSeg}s · Choques: ${choques}`;
+      }
+
+      function colisionConRect(cx, cy, r, rect) {
+        const px = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+        const py = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+        const dx = cx - px;
+        const dy = cy - py;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < r * r) {
+          const dist = Math.sqrt(distSq) || 0.0001;
+          return { nx: dx / dist, ny: dy / dist, penetracion: r - dist };
+        }
+        return null;
+      }
+
+      function registrarChoque(ahoraMs) {
+        if (ahoraMs - tUltimoChoqueMs > COOLDOWN_CHOQUE_MS) {
+          choques++;
+          tUltimoChoqueMs = ahoraMs;
+          flashChoque = { t: Date.now() };
+          actualizarProgreso();
+        }
+      }
+
+      function actualizarFrame(ahoraMs, dtSeg) {
+        const tiltX = offsetX / RADIO_CONTROL;
+        const tiltY = offsetY / RADIO_CONTROL;
+
+        const deltaInclinacion = Math.hypot(tiltX - tiltXAnterior, tiltY - tiltYAnterior);
+        if (deltaInclinacion > UMBRAL_MOVIMIENTO_BRUSCO && ahoraMs - tUltimoBruscoMs > COOLDOWN_BRUSCO_MS) {
+          movimientosBruscos++;
+          tUltimoBruscoMs = ahoraMs;
+        }
+        tiltXAnterior = tiltX;
+        tiltYAnterior = tiltY;
+
+        velX += tiltX * ACELERACION_PX_S2 * dtSeg;
+        velY += tiltY * ACELERACION_PX_S2 * dtSeg;
+        const factorFriccion = Math.pow(FRICCION_POR_SEG, dtSeg * 60);
+        velX *= factorFriccion;
+        velY *= factorFriccion;
+
+        const xAnterior = bolaX;
+        const yAnterior = bolaY;
+        bolaX += velX * dtSeg;
+        bolaY += velY * dtSeg;
+
+        let tocandoPared = false;
+
+        if (bolaX - RADIO_BOLA < 0) {
+          bolaX = RADIO_BOLA;
+          velX = -velX * REBOTE;
+          tocandoPared = true;
+          registrarChoque(ahoraMs);
+        } else if (bolaX + RADIO_BOLA > ANCHO_CANVAS) {
+          bolaX = ANCHO_CANVAS - RADIO_BOLA;
+          velX = -velX * REBOTE;
+          tocandoPared = true;
+          registrarChoque(ahoraMs);
+        }
+        if (bolaY - RADIO_BOLA < 0) {
+          bolaY = RADIO_BOLA;
+          velY = -velY * REBOTE;
+          tocandoPared = true;
+          registrarChoque(ahoraMs);
+        } else if (bolaY + RADIO_BOLA > ALTO_CANVAS) {
+          bolaY = ALTO_CANVAS - RADIO_BOLA;
+          velY = -velY * REBOTE;
+          tocandoPared = true;
+          registrarChoque(ahoraMs);
+        }
+
+        maze.paredes.forEach((pared) => {
+          const colision = colisionConRect(bolaX, bolaY, RADIO_BOLA, pared);
+          if (colision) {
+            bolaX += colision.nx * colision.penetracion;
+            bolaY += colision.ny * colision.penetracion;
+            const vDotN = velX * colision.nx + velY * colision.ny;
+            velX -= (1 + REBOTE) * vDotN * colision.nx;
+            velY -= (1 + REBOTE) * vDotN * colision.ny;
+            tocandoPared = true;
+            registrarChoque(ahoraMs);
+          }
+        });
+
+        if (tocandoPared) tiempoConErrorMs += dtSeg * 1000;
+
+        distanciaRecorridaPx += Math.hypot(bolaX - xAnterior, bolaY - yAnterior);
+        muestras.push({ tMs: ahoraMs, x: bolaX, y: bolaY, tocandoPared });
+
+        const distAMeta = Math.hypot(bolaX - maze.meta.x, bolaY - maze.meta.y);
+        if (distAMeta <= maze.meta.r) {
+          completado = true;
+          tiempoTotalMs = ahoraMs;
+          finalizarTest();
+        }
+      }
+
+      function dibujarLaberinto() {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, ANCHO_CANVAS, ALTO_CANVAS);
+
+        ctx.fillStyle = "#4b5563";
+        maze.paredes.forEach((p) => ctx.fillRect(p.x, p.y, p.w, p.h));
+
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "#2da34d";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(maze.meta.x, maze.meta.y, maze.meta.r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(45, 163, 77, 0.15)";
+        ctx.beginPath();
+        ctx.arc(maze.meta.x, maze.meta.y, maze.meta.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        const ahora = Date.now();
+        let colorBola = "#9aa3ad";
+        if (flashChoque && ahora - flashChoque.t < 300) {
+          colorBola = "#dc3232";
+        } else {
+          flashChoque = null;
+        }
+        ctx.fillStyle = colorBola;
+        ctx.beginPath();
+        ctx.arc(bolaX, bolaY, RADIO_BOLA, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.beginPath();
+        ctx.arc(bolaX - 3, bolaY - 3, RADIO_BOLA / 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function loopAnim() {
+        if (document.getElementById("screen-test").hidden || testTerminado) return;
+        const ahoraMs = Date.now() - tInicioTest - tPausaAcumMs;
+        if (!pausado) {
+          if (tFrameAnteriorMs !== null) {
+            const dtSeg = Math.min(0.05, (ahoraMs - tFrameAnteriorMs) / 1000);
+            if (dtSeg > 0) actualizarFrame(ahoraMs, dtSeg);
+          }
+          tFrameAnteriorMs = ahoraMs;
+          dibujarLaberinto();
+        }
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function tickTimer() {
+        if (pausado || testTerminado) return;
+        tiempoRestanteSeg -= 1;
+        actualizarProgreso();
+        if (tiempoRestanteSeg <= 0) {
+          completado = false;
+          tiempoTotalMs = tiempoMaximoSeg * 1000;
+          finalizarTest();
+        }
+      }
+
+      function iniciarTest() {
+        offsetX = 0;
+        offsetY = 0;
+        bolaX = maze.inicio.x;
+        bolaY = maze.inicio.y;
+        velX = 0;
+        velY = 0;
+        tiltXAnterior = 0;
+        tiltYAnterior = 0;
+        pausado = false;
+        testTerminado = false;
+        completado = false;
+        tPausaAcumMs = 0;
+        tFrameAnteriorMs = null;
+        choques = 0;
+        movimientosBruscos = 0;
+        distanciaRecorridaPx = 0;
+        tiempoConErrorMs = 0;
+        tUltimoChoqueMs = -Infinity;
+        tUltimoBruscoMs = -Infinity;
+        flashChoque = null;
+        muestras = [];
+        tiempoTotalMs = null;
+        tiempoRestanteSeg = tiempoMaximoSeg;
+
+        mostrarPantalla("screen-test");
+        actualizarProgreso();
+        dibujarControl();
+
+        tInicioTest = Date.now();
+        clearInterval(timerInterval);
+        timerInterval = setInterval(tickTimer, 1000);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function finalizarTest() {
+        if (testTerminado) return;
+        testTerminado = true;
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        mostrarResultados();
+      }
+
+      // --- Pausa: tres opciones, igual al patrón reutilizado del prototipo ---
+      document.getElementById("btn-pausa").addEventListener("click", () => {
+        if (pausado || testTerminado) return;
+        pausado = true;
+        tPausaInicio = Date.now();
+        document.getElementById("pause-overlay").hidden = false;
+      });
+
+      document.getElementById("pausa-reanudar").addEventListener("click", () => {
+        pausado = false;
+        tPausaAcumMs += Date.now() - tPausaInicio;
+        document.getElementById("pause-overlay").hidden = true;
+      });
+
+      document.getElementById("pausa-reiniciar").addEventListener("click", () => {
+        document.getElementById("pause-overlay").hidden = true;
+        iniciarTest();
+      });
+
+      document.getElementById("pausa-menu").addEventListener("click", () => {
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        window.location.href = "/pages/test-detail.html?slug=laberinto";
+      });
+
+      // ===== Resultados =====
+      function claseSeveridad(nivel) {
+        if (nivel === "Normal") return "color-verde";
+        if (nivel === "Leve") return "color-amarillo";
+        if (nivel === "Moderado") return "color-naranja";
+        return "color-rojo";
+      }
+
+      function calcularMetricas() {
+        const tiempoTotalSeg = Math.round((tiempoTotalMs / 1000) * 10) / 10;
+        const tiempoIdealSeg = Math.round(maze.caminoIdealPx / VELOCIDAD_IDEAL_PX_S);
+        const tiempoRespectoIdealPct = Math.round((tiempoTotalSeg / tiempoIdealSeg) * 1000) / 10;
+
+        let clasifTiempo;
+        if (tiempoRespectoIdealPct < 120) clasifTiempo = "Normal";
+        else if (tiempoRespectoIdealPct < 150) clasifTiempo = "Leve";
+        else if (tiempoRespectoIdealPct < 200) clasifTiempo = "Moderado";
+        else clasifTiempo = "Severo";
+
+        let clasifChoques;
+        if (choques <= 2) clasifChoques = "Normal";
+        else if (choques <= 5) clasifChoques = "Leve";
+        else if (choques <= 10) clasifChoques = "Moderado";
+        else clasifChoques = "Severo";
+
+        const indiceDesviacion = Math.round((distanciaRecorridaPx / maze.caminoIdealPx) * 100) / 100;
+        let clasifDesviacion;
+        if (indiceDesviacion < 1.2) clasifDesviacion = "Normal";
+        else if (indiceDesviacion < 1.5) clasifDesviacion = "Leve";
+        else if (indiceDesviacion < 2.0) clasifDesviacion = "Moderado";
+        else clasifDesviacion = "Severo";
+
+        let clasifBruscos;
+        if (movimientosBruscos <= 5) clasifBruscos = "Normal";
+        else if (movimientosBruscos <= 15) clasifBruscos = "Leve";
+        else if (movimientosBruscos <= 30) clasifBruscos = "Moderado";
+        else clasifBruscos = "Severo";
+
+        const precisionControlPct = Math.round(((tiempoTotalMs - tiempoConErrorMs) / tiempoTotalMs) * 1000) / 10;
+        let clasifPrecision;
+        if (precisionControlPct > 90) clasifPrecision = "Normal";
+        else if (precisionControlPct > 75) clasifPrecision = "Leve";
+        else if (precisionControlPct > 50) clasifPrecision = "Moderado";
+        else clasifPrecision = "Severo";
+
+        return {
+          completado,
+          complejidad: complejidadElegida,
+          tiempo_maximo_seg: tiempoMaximoSeg,
+          tiempo_total_seg: tiempoTotalSeg,
+          tiempo_ideal_seg: tiempoIdealSeg,
+          tiempo_respecto_ideal_pct: tiempoRespectoIdealPct,
+          clasificacion_tiempo: clasifTiempo,
+          choques,
+          clasificacion_choques: clasifChoques,
+          camino_recorrido_px: Math.round(distanciaRecorridaPx),
+          camino_ideal_px: maze.caminoIdealPx,
+          indice_desviacion: indiceDesviacion,
+          clasificacion_desviacion: clasifDesviacion,
+          movimientos_bruscos: movimientosBruscos,
+          clasificacion_movimientos: clasifBruscos,
+          precision_control_pct: precisionControlPct,
+          clasificacion_precision: clasifPrecision,
+        };
+      }
+
+      function mostrarResultados() {
+        metricasFinal = calcularMetricas();
+        const m = metricasFinal;
+
+        document.getElementById("resultados-resumen").innerHTML = `
+          <p><strong>Resultado:</strong> ${
+            m.completado
+              ? `Completado en ${m.tiempo_total_seg}s`
+              : `No completado (se agotó el tiempo a los ${m.tiempo_total_seg}s)`
+          } · <strong>Complejidad:</strong> ${m.complejidad}</p>
+          <hr />
+          <p><strong>Tiempo respecto al ideal:</strong> ${m.tiempo_respecto_ideal_pct}% (ideal: ${m.tiempo_ideal_seg}s) —
+             <span class="${claseSeveridad(m.clasificacion_tiempo)}">${m.clasificacion_tiempo}</span></p>
+          <p><strong>Choques contra paredes:</strong> ${m.choques} —
+             <span class="${claseSeveridad(m.clasificacion_choques)}">${m.clasificacion_choques}</span></p>
+          <p><strong>Desviación respecto a la trayectoria ideal:</strong> ${m.indice_desviacion}
+             (recorrido: ${m.camino_recorrido_px}px, ideal: ${m.camino_ideal_px}px) —
+             <span class="${claseSeveridad(m.clasificacion_desviacion)}">${m.clasificacion_desviacion}</span></p>
+          <p><strong>Movimientos bruscos:</strong> ${m.movimientos_bruscos} —
+             <span class="${claseSeveridad(m.clasificacion_movimientos)}">${m.clasificacion_movimientos}</span></p>
+          <p><strong>Precisión del control:</strong> ${m.precision_control_pct}% —
+             <span class="${claseSeveridad(m.clasificacion_precision)}">${m.clasificacion_precision}</span></p>
+        `;
+        mostrarPantalla("screen-resultados");
+      }
+
+      document.getElementById("btn-guardar").addEventListener("click", async () => {
+        const comentario = document.getElementById("comentario-clinico").value.trim();
+
+        // Igual que en Tracking: un resumen por segundo, no una fila por
+        // cada frame de animación (serían miles de filas).
+        const segundosTotales = Math.ceil(tiempoTotalMs / 1000);
+        const detalle = [];
+        for (let s = 0; s < segundosTotales; s++) {
+          const delSegundo = muestras.filter((m) => Math.floor(m.tMs / 1000) === s);
+          if (delSegundo.length === 0) continue;
+          let distanciaSegundo = 0;
+          for (let i = 1; i < delSegundo.length; i++) {
+            distanciaSegundo += Math.hypot(delSegundo[i].x - delSegundo[i - 1].x, delSegundo[i].y - delSegundo[i - 1].y);
+          }
+          const tuvoChoque = delSegundo.some((m) => m.tocandoPared);
+          detalle.push({
+            numero_estimulo: s + 1,
+            estimulo: `Segundo ${s + 1}`,
+            respuesta: `Distancia recorrida: ${Math.round(distanciaSegundo)} px`,
+            correcto: !tuvoChoque,
+            tipo_error: null,
+            rt_ms: null,
+          });
+        }
+
+        const respuesta = await fetch("/api/resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paciente_id: paciente.id,
+            test_slug: "laberinto",
+            parametros: {
+              complejidad: complejidadElegida,
+              tiempo_maximo_seg: tiempoMaximoSeg,
+            },
+            metricas: metricasFinal,
+            detalle: detalle,
+            comentarios_medico: comentario || null,
+          }),
+        });
+        const datos = await respuesta.json();
+        const mensaje = document.getElementById("guardado-msg");
+
+        if (respuesta.ok) {
+          mensaje.className = "info-box";
+          mensaje.textContent = "Resultado guardado correctamente.";
+          mensaje.hidden = false;
+          document.getElementById("acciones-resultado").hidden = true;
+          document.getElementById("acciones-post-guardado").hidden = false;
+        } else {
+          mensaje.className = "error-box";
+          mensaje.textContent = `No se pudo guardar: ${datos.detail}`;
+          mensaje.hidden = false;
+        }
+      });
+
+      document.getElementById("btn-descartar").addEventListener("click", () => {
+        const mensaje = document.getElementById("guardado-msg");
+        mensaje.className = "info-box";
+        mensaje.textContent = "Resultado descartado.";
+        mensaje.hidden = false;
+        document.getElementById("acciones-resultado").hidden = true;
+        document.getElementById("acciones-post-guardado").hidden = false;
+      });
+
+      document.getElementById("btn-otro-intento").addEventListener("click", () => {
+        document.getElementById("acciones-resultado").hidden = false;
+        document.getElementById("acciones-post-guardado").hidden = true;
+        document.getElementById("guardado-msg").hidden = true;
+        document.getElementById("comentario-clinico").value = "";
+
+        mostrarPantalla("screen-config");
+      });
+    }
+  </script>
+</body>
+</html>

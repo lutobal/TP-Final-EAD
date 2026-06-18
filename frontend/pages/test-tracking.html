@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tracking Visomotor — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <!-- Pantalla 1: se muestra solo si no hay paciente activo (sección 9.7) -->
+    <section id="screen-gate" hidden>
+      <h1>Antes de empezar</h1>
+      <p class="page-subtitle">Para realizar este test hace falta un paciente activo.</p>
+      <div class="form-inline">
+        <a class="btn-primary" href="/pages/pacientes.html?volver=tracking">Seleccionar paciente existente</a>
+        <a class="btn-primary" href="/pages/pacientes.html?volver=tracking&crear=1">Crear paciente nuevo</a>
+        <a class="btn-primary" href="/pages/test-detail.html?slug=tracking">Cancelar</a>
+      </div>
+    </section>
+
+    <!-- Pantalla 2: instrucciones tipo carrusel -->
+    <section id="screen-instrucciones" hidden>
+      <div class="carousel-header">
+        <a href="/pages/test-detail.html?slug=tracking" class="back-link">Salir</a>
+        <span id="carousel-titulo"></span>
+      </div>
+      <div id="carousel-contenido"></div>
+      <div id="carousel-visual" class="carousel-visual"></div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="carousel-nav">
+        <button id="carousel-anterior" class="btn-primary" type="button">← Anterior</button>
+        <button id="carousel-saltear" class="btn-primary" type="button">Saltear</button>
+        <button id="carousel-siguiente" class="btn-primary" type="button">Siguiente →</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 3: configuración -->
+    <section id="screen-config" hidden>
+      <h1>Configuración del test</h1>
+
+      <h2>Duración del test</h2>
+      <div class="form-inline">
+        <label for="config-duracion">Segundos (20 a 180):</label>
+        <input id="config-duracion" type="number" min="20" max="180" step="10" value="60" />
+      </div>
+
+      <h2>Velocidad de la trayectoria</h2>
+      <div class="form-inline">
+        <label for="config-velocidad">Multiplicador (0,5 a 3):</label>
+        <input id="config-velocidad" type="number" min="0.5" max="3" step="0.25" value="1" />
+      </div>
+
+      <h2>Complejidad de la trayectoria</h2>
+      <div class="level-options">
+        <button class="level-option selected" data-complejidad="simple" type="button">
+          <strong>Simple</strong>
+          <span>Recorrido suave y predecible, como una elipse.</span>
+        </button>
+        <button class="level-option" data-complejidad="media" type="button">
+          <strong>Media</strong>
+          <span>Recorrido más sinuoso, cambia de dirección con más frecuencia.</span>
+        </button>
+        <button class="level-option" data-complejidad="compleja" type="button">
+          <strong>Compleja</strong>
+          <span>Recorrido intrincado, difícil de anticipar.</span>
+        </button>
+      </div>
+
+      <button id="config-continuar" class="btn-primary" type="button">Iniciar</button>
+    </section>
+
+    <!-- Pantalla 4: el test en sí -->
+    <section id="screen-test" hidden>
+      <div class="tracking-header">
+        <div class="tracking-progreso" id="tracking-progreso"></div>
+        <span class="tracking-zona-indicador" id="tracking-zona-indicador"></span>
+        <button id="btn-pausa" class="pause-button" type="button" aria-label="Pausar" title="Pausar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="page-subtitle">Movés el joystick para mover el cursor. Trata de mantenerlo lo más cerca posible del objetivo todo el tiempo.</p>
+
+      <div class="tracking-canvas-wrap">
+        <canvas id="tracking-canvas" width="820" height="460"></canvas>
+      </div>
+    </section>
+
+    <!-- Pantalla 5: resultados -->
+    <section id="screen-resultados" hidden>
+      <h1>Resultados</h1>
+      <div id="resultados-resumen"></div>
+
+      <label for="comentario-clinico">Comentario clínico (opcional)</label>
+      <textarea id="comentario-clinico" class="form" style="width: 100%; max-width: 480px;"></textarea>
+
+      <div class="form-inline" id="acciones-resultado">
+        <button id="btn-guardar" class="btn-primary" type="button">Guardar resultado</button>
+        <button id="btn-descartar" class="btn-primary" type="button">Descartar resultado</button>
+      </div>
+      <p id="guardado-msg" class="info-box" hidden></p>
+      <div class="form-inline" id="acciones-post-guardado" hidden>
+        <a href="/pages/home.html" class="btn-primary">Volver al inicio</a>
+        <button id="btn-otro-intento" class="btn-primary" type="button">Realizar otro intento</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Overlay de pausa: tres opciones, igual al patrón del prototipo -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-overlay-box">
+      <h2>Test en pausa</h2>
+      <button id="pausa-reanudar" class="btn-primary" type="button">Reanudar</button>
+      <button id="pausa-reiniciar" class="btn-primary" type="button">Reiniciar</button>
+      <button id="pausa-menu" class="btn-primary" type="button">Volver al menú</button>
+    </div>
+  </div>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página: el test de Tracking Visomotor ---
+
+      function mostrarPantalla(idVisible) {
+        ["screen-gate", "screen-instrucciones", "screen-config", "screen-test", "screen-resultados"].forEach(
+          (id) => {
+            document.getElementById(id).hidden = id !== idVisible;
+          }
+        );
+      }
+
+      // ===== Instrucciones (carrusel) =====
+      const SLIDES = [
+        {
+          titulo: "Tracking Visomotor",
+          lineas: [
+            "Vas a ver un objetivo (el punto naranja) que se mueve por la pantalla siguiendo un recorrido.",
+            "Movés el joystick para mover tu cursor (el punto azul) y trata de mantenerlo lo más cerca posible del objetivo, todo el tiempo.",
+          ],
+        },
+        {
+          titulo: "La zona de tolerancia",
+          lineas: [
+            "Alrededor del objetivo hay una zona de tolerancia, marcada con un círculo punteado.",
+            "Mientras tu cursor esté dentro de esa zona, va a cambiar de color: significa que estás bien posicionado.",
+          ],
+        },
+        {
+          titulo: "Velocidad y complejidad",
+          lineas: [
+            "Podés ajustar qué tan rápido se mueve el objetivo y qué tan complicado es su recorrido.",
+          ],
+        },
+        {
+          titulo: "El test no se detiene",
+          lineas: [
+            "A diferencia de otros tests, este no espera a que respondas estímulo por estímulo.",
+            "El objetivo se mueve todo el tiempo: tenés que seguirlo de manera continua durante toda la prueba.",
+          ],
+        },
+        {
+          titulo: "El botón de pausa",
+          lineas: [
+            "En cualquier momento podés pausar el test con el botón de pausa del control.",
+            "Al pausar aparecen tres opciones: Reanudar, Reiniciar o Volver al menú.",
+          ],
+        },
+        {
+          titulo: "¡Todo listo!",
+          lineas: [
+            "Cuando estés listo, presioná Iniciar.",
+          ],
+        },
+      ];
+      let slideActual = 0;
+
+      function dibujarVisual(i) {
+        if (i === 0) {
+          return `
+            <div class="tracking-demo-stage">
+              <div class="tracking-demo-target" style="top: 55px; left: 160px;"></div>
+              <div class="tracking-demo-cursor" style="top: 90px; left: 100px;"></div>
+            </div>
+            <div class="tracking-demo-leyenda">
+              <span><span class="tracking-demo-swatch tracking-demo-swatch-objetivo"></span>Objetivo (naranja)</span>
+              <span><span class="tracking-demo-swatch tracking-demo-swatch-cursor"></span>Tu cursor (azul)</span>
+            </div>
+            <p class="stroop-example-label">El cursor sigue al objetivo</p>
+          `;
+        }
+        if (i === 1) {
+          return `
+            <div class="tracking-demo-stage">
+              <div class="tracking-demo-zona" style="top: 35px; left: 130px;"></div>
+              <div class="tracking-demo-target" style="top: 55px; left: 150px;"></div>
+              <div class="tracking-demo-cursor tracking-demo-cursor-en-zona" style="top: 62px; left: 158px;"></div>
+            </div>
+            <div class="tracking-demo-leyenda">
+              <span><span class="tracking-demo-swatch tracking-demo-swatch-objetivo"></span>Objetivo (naranja)</span>
+              <span><span class="tracking-demo-swatch tracking-demo-swatch-cursor-zona"></span>Cursor en zona (verde)</span>
+            </div>
+            <p class="stroop-example-label color-verde">Dentro de la zona = color verde</p>
+          `;
+        }
+        if (i === 2) {
+          return `
+            <div class="level-preview">
+              <div class="level-preview-row bg-verde">
+                <strong>Simple</strong><span>Recorrido suave y predecible</span>
+              </div>
+              <div class="level-preview-row bg-amarillo">
+                <strong>Media</strong><span>Cambia de dirección con más frecuencia</span>
+              </div>
+              <div class="level-preview-row bg-rojo">
+                <strong>Compleja</strong><span>Recorrido intrincado, difícil de anticipar</span>
+              </div>
+            </div>
+          `;
+        }
+        if (i === 3) {
+          return `
+            <div class="tracking-demo-path">
+              <span class="tracking-demo-dot"></span>
+              <span class="tracking-demo-dot"></span>
+              <span class="tracking-demo-dot tracking-demo-dot-activo"></span>
+              <span class="tracking-demo-dot"></span>
+              <span class="tracking-demo-dot"></span>
+            </div>
+            <p class="stroop-example-label">El recorrido continúa sin pausas entre estímulos</p>
+          `;
+        }
+        if (i === 4) {
+          return `
+            <div class="pause-example">
+              <div class="pause-example-icon">II</div>
+              <div class="pause-example-options">
+                <span class="pause-example-option bg-verde">Reanudar</span>
+                <span class="pause-example-option bg-rojo">Reiniciar</span>
+                <span class="pause-example-option bg-amarillo">Volver al menú</span>
+              </div>
+            </div>
+          `;
+        }
+        return `<div class="success-check">✓</div>`;
+      }
+
+      function mostrarSlide(i) {
+        slideActual = i;
+        const slide = SLIDES[i];
+        document.getElementById("carousel-titulo").textContent = `Paso ${i + 1} de ${SLIDES.length}`;
+        document.getElementById("carousel-contenido").innerHTML = `
+          <h2 class="carousel-slide-titulo">${slide.titulo}</h2>
+          <div class="carousel-slide-lineas">${slide.lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        `;
+        document.getElementById("carousel-visual").innerHTML = dibujarVisual(i);
+        document.getElementById("carousel-dots").innerHTML = SLIDES.map(
+          (_, idx) => `<span class="carousel-dot${idx === i ? " activo" : ""}"></span>`
+        ).join("");
+
+        document.getElementById("carousel-anterior").disabled = i === 0;
+        const esUltimo = i === SLIDES.length - 1;
+        document.getElementById("carousel-saltear").hidden = esUltimo;
+        document.getElementById("carousel-siguiente").textContent = esUltimo ? "Continuar" : "Siguiente →";
+      }
+
+      document.getElementById("carousel-anterior").addEventListener("click", () => {
+        if (slideActual > 0) mostrarSlide(slideActual - 1);
+      });
+      document.getElementById("carousel-saltear").addEventListener("click", () => {
+        mostrarSlide(SLIDES.length - 1);
+      });
+      document.getElementById("carousel-siguiente").addEventListener("click", () => {
+        if (slideActual < SLIDES.length - 1) {
+          mostrarSlide(slideActual + 1);
+        } else {
+          mostrarPantalla("screen-config");
+        }
+      });
+
+      // ===== Pantalla inicial: gate de paciente o instrucciones =====
+      if (!paciente) {
+        mostrarPantalla("screen-gate");
+      } else {
+        mostrarPantalla("screen-instrucciones");
+        mostrarSlide(0);
+      }
+
+      // ===== Configuración =====
+      let complejidadElegida = "simple";
+
+      document.querySelectorAll(".level-option").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          complejidadElegida = boton.dataset.complejidad;
+          document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+          boton.classList.add("selected");
+        });
+      });
+
+      let duracionSeg = 60;
+      let velocidadElegida = 1;
+
+      document.getElementById("config-continuar").addEventListener("click", () => {
+        function leerNumero(id, defecto, minimo, maximo) {
+          let valor = parseFloat(document.getElementById(id).value);
+          if (isNaN(valor)) valor = defecto;
+          return Math.min(maximo, Math.max(minimo, valor));
+        }
+
+        duracionSeg = leerNumero("config-duracion", 60, 20, 180);
+        velocidadElegida = leerNumero("config-velocidad", 1, 0.5, 3);
+
+        iniciarTest();
+      });
+
+      // ===== El test en sí =====
+      const ANCHO_CANVAS = 820;
+      const ALTO_CANVAS = 460;
+      const MARGEN_X = 70;
+      const MARGEN_Y = 70;
+      const AMPLITUD_X = ANCHO_CANVAS / 2 - MARGEN_X;
+      const AMPLITUD_Y = ALTO_CANVAS / 2 - MARGEN_Y;
+      const CENTRO_X = ANCHO_CANVAS / 2;
+      const CENTRO_Y = ALTO_CANVAS / 2;
+      const VELOCIDAD_ANGULAR_BASE = (2 * Math.PI) / 30; // una vuelta simple cada 30s a velocidad 1
+      const ZONA_TOLERANCIA_PX = 15;
+      const RADIO_OBJETIVO_PX = 14;
+      const RADIO_CURSOR_PX = 10;
+      const FRECUENCIAS_COMPLEJIDAD = {
+        simple: { fx: 1, fy: 1 },
+        media: { fx: 2, fy: 3 },
+        compleja: { fx: 3, fy: 5 },
+      };
+
+      const canvas = document.getElementById("tracking-canvas");
+      const ctx = canvas.getContext("2d");
+
+      let cursorX = CENTRO_X;
+      let cursorY = CENTRO_Y;
+      let pausado = false;
+      let testTerminado = false;
+      let tInicioTest = null;
+      let tPausaAcumMs = 0;
+      let tPausaInicio = null;
+      let tiempoRestanteSeg = 0;
+      let timerInterval = null;
+      let animFrameId = null;
+      let muestras = [];
+      let metricasFinal = null;
+
+      function posicionObjetivo(tSeg) {
+        const { fx, fy } = FRECUENCIAS_COMPLEJIDAD[complejidadElegida];
+        const w = VELOCIDAD_ANGULAR_BASE * velocidadElegida;
+        return {
+          x: CENTRO_X + AMPLITUD_X * Math.sin(fx * w * tSeg),
+          y: CENTRO_Y + AMPLITUD_Y * Math.cos(fy * w * tSeg),
+        };
+      }
+
+      function actualizarPosicionCursor(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const escalaX = ANCHO_CANVAS / rect.width;
+        const escalaY = ALTO_CANVAS / rect.height;
+        cursorX = Math.max(0, Math.min(ANCHO_CANVAS, (clientX - rect.left) * escalaX));
+        cursorY = Math.max(0, Math.min(ALTO_CANVAS, (clientY - rect.top) * escalaY));
+      }
+
+      canvas.addEventListener("mousemove", (event) => {
+        if (pausado || testTerminado) return;
+        actualizarPosicionCursor(event.clientX, event.clientY);
+      });
+
+      function actualizarProgreso() {
+        document.getElementById("tracking-progreso").textContent = `Tiempo restante: ${tiempoRestanteSeg}s`;
+      }
+
+      function dibujarFrame(objetivo, enZona) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, ANCHO_CANVAS, ALTO_CANVAS);
+
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(37, 99, 235, 0.35)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(objetivo.x, objetivo.y, ZONA_TOLERANCIA_PX, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "#f97316";
+        ctx.beginPath();
+        ctx.arc(objetivo.x, objetivo.y, RADIO_OBJETIVO_PX, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = enZona ? "#16a34a" : "#2563eb";
+        ctx.beginPath();
+        ctx.arc(cursorX, cursorY, RADIO_CURSOR_PX, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function actualizarFrame() {
+        const tSeg = (Date.now() - tInicioTest - tPausaAcumMs) / 1000;
+        const objetivo = posicionObjetivo(tSeg);
+        const error = Math.hypot(cursorX - objetivo.x, cursorY - objetivo.y);
+        const enZona = error <= ZONA_TOLERANCIA_PX;
+
+        muestras.push({ tMs: tSeg * 1000, error });
+
+        const indicador = document.getElementById("tracking-zona-indicador");
+        indicador.textContent = enZona ? "En zona" : "Fuera de zona";
+        indicador.className = `tracking-zona-indicador ${enZona ? "color-verde" : "color-rojo"}`;
+
+        dibujarFrame(objetivo, enZona);
+      }
+
+      function loopAnim() {
+        if (document.getElementById("screen-test").hidden || testTerminado) return;
+        if (!pausado) actualizarFrame();
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function tickTimer() {
+        if (pausado || testTerminado) return;
+        tiempoRestanteSeg -= 1;
+        actualizarProgreso();
+        if (tiempoRestanteSeg <= 0) finalizarTest();
+      }
+
+      function iniciarTest() {
+        cursorX = CENTRO_X;
+        cursorY = CENTRO_Y;
+        pausado = false;
+        testTerminado = false;
+        tPausaAcumMs = 0;
+        muestras = [];
+        tiempoRestanteSeg = duracionSeg;
+
+        mostrarPantalla("screen-test");
+        actualizarProgreso();
+
+        tInicioTest = Date.now();
+        clearInterval(timerInterval);
+        timerInterval = setInterval(tickTimer, 1000);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function finalizarTest() {
+        if (testTerminado) return;
+        testTerminado = true;
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        mostrarResultados();
+      }
+
+      // --- Pausa: tres opciones, igual al patrón reutilizado del prototipo ---
+      document.getElementById("btn-pausa").addEventListener("click", () => {
+        if (pausado || testTerminado) return;
+        pausado = true;
+        tPausaInicio = Date.now();
+        document.getElementById("pause-overlay").hidden = false;
+      });
+
+      document.getElementById("pausa-reanudar").addEventListener("click", () => {
+        pausado = false;
+        tPausaAcumMs += Date.now() - tPausaInicio;
+        document.getElementById("pause-overlay").hidden = true;
+      });
+
+      document.getElementById("pausa-reiniciar").addEventListener("click", () => {
+        document.getElementById("pause-overlay").hidden = true;
+        iniciarTest();
+      });
+
+      document.getElementById("pausa-menu").addEventListener("click", () => {
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        window.location.href = "/pages/test-detail.html?slug=tracking";
+      });
+
+      // ===== Resultados =====
+      function claseSeveridad(nivel) {
+        if (nivel === "Normal") return "color-verde";
+        if (nivel === "Leve") return "color-amarillo";
+        if (nivel === "Moderado") return "color-naranja";
+        return "color-rojo";
+      }
+
+      function clasificarAscendente(valor, b1, b2, b3) {
+        if (valor < b1) return "Normal";
+        if (valor < b2) return "Leve";
+        if (valor < b3) return "Moderado";
+        return "Severo";
+      }
+
+      function clasificarDescendente(valor, b1, b2, b3) {
+        if (valor > b1) return "Normal";
+        if (valor > b2) return "Leve";
+        if (valor > b3) return "Moderado";
+        return "Severo";
+      }
+
+      function calcularMetricas() {
+        const errores = muestras.map((m) => m.error);
+        const total = errores.length;
+        const errorPromedio = errores.reduce((a, b) => a + b, 0) / total;
+        const errorMaximo = Math.max(...errores);
+        const varianza = errores.reduce((a, e) => a + (e - errorPromedio) ** 2, 0) / total;
+        const desvioEstandar = Math.sqrt(varianza);
+        const dentroDeZona = errores.filter((e) => e <= ZONA_TOLERANCIA_PX).length;
+        const pctTiempoEnZona = (dentroDeZona / total) * 100;
+
+        const clasifErrorPromedio = clasificarAscendente(errorPromedio, 10, 20, 35);
+        const clasifErrorMaximo = clasificarAscendente(errorMaximo, 30, 60, 100);
+        const clasifVariabilidad = clasificarAscendente(desvioEstandar, 5, 12, 25);
+        const clasifTiempoEnZona = clasificarDescendente(pctTiempoEnZona, 90, 75, 50);
+
+        const puntos = { Normal: 0, Leve: 1, Moderado: 2, Severo: 3 };
+        const puntajeGlobal =
+          puntos[clasifErrorPromedio] + puntos[clasifErrorMaximo] + puntos[clasifVariabilidad] + puntos[clasifTiempoEnZona];
+        const clasifGlobal = clasificarAscendente(puntajeGlobal, 3, 6, 9);
+
+        return {
+          duracion_seg: duracionSeg,
+          velocidad: velocidadElegida,
+          complejidad: complejidadElegida,
+          error_promedio_px: Math.round(errorPromedio * 10) / 10,
+          clasificacion_error_promedio: clasifErrorPromedio,
+          error_maximo_px: Math.round(errorMaximo * 10) / 10,
+          clasificacion_error_maximo: clasifErrorMaximo,
+          desvio_estandar_px: Math.round(desvioEstandar * 10) / 10,
+          clasificacion_variabilidad: clasifVariabilidad,
+          tiempo_en_zona_pct: Math.round(pctTiempoEnZona * 10) / 10,
+          clasificacion_tiempo_zona: clasifTiempoEnZona,
+          puntaje_global: puntajeGlobal,
+          clasificacion_global: clasifGlobal,
+        };
+      }
+
+      function mostrarResultados() {
+        metricasFinal = calcularMetricas();
+        const m = metricasFinal;
+
+        document.getElementById("resultados-resumen").innerHTML = `
+          <p><strong>Duración:</strong> ${m.duracion_seg}s · <strong>Velocidad:</strong> ${m.velocidad}x · <strong>Complejidad:</strong> ${m.complejidad}</p>
+          <hr />
+          <p><strong>Error promedio:</strong> ${m.error_promedio_px} px —
+             <span class="${claseSeveridad(m.clasificacion_error_promedio)}">${m.clasificacion_error_promedio}</span></p>
+          <p><strong>Error máximo:</strong> ${m.error_maximo_px} px —
+             <span class="${claseSeveridad(m.clasificacion_error_maximo)}">${m.clasificacion_error_maximo}</span></p>
+          <p><strong>Variabilidad del movimiento (desvío estándar):</strong> ${m.desvio_estandar_px} px —
+             <span class="${claseSeveridad(m.clasificacion_variabilidad)}">${m.clasificacion_variabilidad}</span></p>
+          <p><strong>Tiempo dentro de la zona objetivo:</strong> ${m.tiempo_en_zona_pct}% —
+             <span class="${claseSeveridad(m.clasificacion_tiempo_zona)}">${m.clasificacion_tiempo_zona}</span></p>
+          <p><strong>Clasificación global (score combinado):</strong> ${m.puntaje_global} / 12 —
+             <span class="${claseSeveridad(m.clasificacion_global)}">${m.clasificacion_global}</span></p>
+        `;
+        mostrarPantalla("screen-resultados");
+      }
+
+      document.getElementById("btn-guardar").addEventListener("click", async () => {
+        const comentario = document.getElementById("comentario-clinico").value.trim();
+
+        // El detalle se agrupa por segundo (no por cada muestra de animación,
+        // que serían miles de filas): un resumen por segundo es suficiente
+        // para que el terapeuta vea cómo varió el error a lo largo del test.
+        const segundos = Math.ceil(muestras[muestras.length - 1].tMs / 1000);
+        const detalle = [];
+        for (let s = 0; s < segundos; s++) {
+          const delSegundo = muestras.filter((m) => Math.floor(m.tMs / 1000) === s);
+          if (delSegundo.length === 0) continue;
+          const erroresSegundo = delSegundo.map((m) => m.error);
+          const promedioSegundo = erroresSegundo.reduce((a, b) => a + b, 0) / erroresSegundo.length;
+          detalle.push({
+            numero_estimulo: s + 1,
+            estimulo: `Segundo ${s + 1}`,
+            respuesta: `Error promedio: ${Math.round(promedioSegundo * 10) / 10} px (máximo: ${Math.round(Math.max(...erroresSegundo) * 10) / 10} px)`,
+            correcto: promedioSegundo <= ZONA_TOLERANCIA_PX,
+            tipo_error: null,
+            rt_ms: null,
+          });
+        }
+
+        const respuesta = await fetch("/api/resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paciente_id: paciente.id,
+            test_slug: "tracking",
+            parametros: {
+              duracion_seg: duracionSeg,
+              velocidad: velocidadElegida,
+              complejidad: complejidadElegida,
+            },
+            metricas: metricasFinal,
+            detalle: detalle,
+            comentarios_medico: comentario || null,
+          }),
+        });
+        const datos = await respuesta.json();
+        const mensaje = document.getElementById("guardado-msg");
+
+        if (respuesta.ok) {
+          mensaje.className = "info-box";
+          mensaje.textContent = "Resultado guardado correctamente.";
+          mensaje.hidden = false;
+          document.getElementById("acciones-resultado").hidden = true;
+          document.getElementById("acciones-post-guardado").hidden = false;
+        } else {
+          mensaje.className = "error-box";
+          mensaje.textContent = `No se pudo guardar: ${datos.detail}`;
+          mensaje.hidden = false;
+        }
+      });
+
+      document.getElementById("btn-descartar").addEventListener("click", () => {
+        const mensaje = document.getElementById("guardado-msg");
+        mensaje.className = "info-box";
+        mensaje.textContent = "Resultado descartado.";
+        mensaje.hidden = false;
+        document.getElementById("acciones-resultado").hidden = true;
+        document.getElementById("acciones-post-guardado").hidden = false;
+      });
+
+      document.getElementById("btn-otro-intento").addEventListener("click", () => {
+        document.getElementById("acciones-resultado").hidden = false;
+        document.getElementById("acciones-post-guardado").hidden = true;
+        document.getElementById("guardado-msg").hidden = true;
+        document.getElementById("comentario-clinico").value = "";
+
+        mostrarPantalla("screen-config");
+      });
+    }
+  </script>
+</body>
+</html>

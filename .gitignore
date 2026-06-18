@@ -1,0 +1,13 @@
+# Entorno virtual de Python (se recrea con "pip install -r requirements.txt")
+backend/.venv/
+backend/__pycache__/
+__pycache__/
+*.pyc
+
+# Base de datos local: son datos de prueba, no código
+backend/data/*.db
+
+# Proyecto de PlatformIO aparte (firmware ESP32 en exploracion, no es parte
+# de esta entrega todavia - ver charla sobre si esto va en otro repo)
+/TP Final/
+/platformio.ini

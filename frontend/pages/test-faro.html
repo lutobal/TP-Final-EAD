@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exploración de Faro — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <!-- Pantalla 1: se muestra solo si no hay paciente activo (sección 9.7) -->
+    <section id="screen-gate" hidden>
+      <h1>Antes de empezar</h1>
+      <p class="page-subtitle">Para realizar este test hace falta un paciente activo.</p>
+      <div class="form-inline">
+        <a class="btn-primary" href="/pages/pacientes.html?volver=faro">Seleccionar paciente existente</a>
+        <a class="btn-primary" href="/pages/pacientes.html?volver=faro&crear=1">Crear paciente nuevo</a>
+        <a class="btn-primary" href="/pages/test-detail.html?slug=faro">Cancelar</a>
+      </div>
+    </section>
+
+    <!-- Pantalla 2: instrucciones tipo carrusel -->
+    <section id="screen-instrucciones" hidden>
+      <div class="carousel-header">
+        <a href="/pages/test-detail.html?slug=faro" class="back-link">Salir</a>
+        <span id="carousel-titulo"></span>
+      </div>
+      <div id="carousel-contenido"></div>
+      <div id="carousel-visual" class="carousel-visual"></div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="carousel-nav">
+        <button id="carousel-anterior" class="btn-primary" type="button">← Anterior</button>
+        <button id="carousel-saltear" class="btn-primary" type="button">Saltear</button>
+        <button id="carousel-siguiente" class="btn-primary" type="button">Siguiente →</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 3: configuración -->
+    <section id="screen-config" hidden>
+      <h1>Configuración del test</h1>
+
+      <h2>Cantidad de objetivos</h2>
+      <div class="form-inline">
+        <label for="config-cantidad">Cantidad (6 a 30):</label>
+        <input id="config-cantidad" type="number" min="6" max="30" step="2" value="12" />
+      </div>
+
+      <h2>Tiempo disponible</h2>
+      <div class="form-inline">
+        <label for="config-tiempo">Segundos (30 a 300):</label>
+        <input id="config-tiempo" type="number" min="30" max="300" step="10" value="90" />
+      </div>
+
+      <h2>Radio de la linterna</h2>
+      <div class="form-inline">
+        <label for="config-radio-linterna">Píxeles (60 a 200):</label>
+        <input id="config-radio-linterna" type="number" min="60" max="200" step="10" value="110" />
+      </div>
+
+      <h2>Tamaño de los objetivos</h2>
+      <div class="form-inline">
+        <label for="config-radio-objetivo">Píxeles (15 a 40):</label>
+        <input id="config-radio-objetivo" type="number" min="15" max="40" step="5" value="22" />
+      </div>
+
+      <h2>Contraste entre objetivos y fondo</h2>
+      <div class="level-options">
+        <button class="level-option selected" data-contraste="alto" type="button">
+          <strong>Alto</strong>
+          <span>Objetivos bien brillantes, fáciles de distinguir del fondo.</span>
+        </button>
+        <button class="level-option" data-contraste="medio" type="button">
+          <strong>Medio</strong>
+          <span>Objetivos con brillo moderado.</span>
+        </button>
+        <button class="level-option" data-contraste="bajo" type="button">
+          <strong>Bajo</strong>
+          <span>Objetivos tenues, más difíciles de distinguir del fondo.</span>
+        </button>
+      </div>
+
+      <button id="config-continuar" class="btn-primary" type="button">Iniciar</button>
+    </section>
+
+    <!-- Pantalla 4: el test en sí -->
+    <section id="screen-test" hidden>
+      <div class="faro-header">
+        <div class="faro-progreso" id="faro-progreso"></div>
+        <button id="btn-pausa" class="pause-button" type="button" aria-label="Pausar" title="Pausar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="page-subtitle">Movés el joystick para mover la linterna. Presioná el botón del joystick para marcar un objetivo encontrado.</p>
+
+      <div class="faro-canvas-wrap">
+        <canvas id="faro-canvas" width="820" height="460"></canvas>
+      </div>
+    </section>
+
+    <!-- Pantalla 5: resultados -->
+    <section id="screen-resultados" hidden>
+      <h1>Resultados</h1>
+      <div id="resultados-resumen"></div>
+
+      <label for="comentario-clinico">Comentario clínico (opcional)</label>
+      <textarea id="comentario-clinico" class="form" style="width: 100%; max-width: 480px;"></textarea>
+
+      <div class="form-inline" id="acciones-resultado">
+        <button id="btn-guardar" class="btn-primary" type="button">Guardar resultado</button>
+        <button id="btn-descartar" class="btn-primary" type="button">Descartar resultado</button>
+      </div>
+      <p id="guardado-msg" class="info-box" hidden></p>
+      <div class="form-inline" id="acciones-post-guardado" hidden>
+        <a href="/pages/home.html" class="btn-primary">Volver al inicio</a>
+        <button id="btn-otro-intento" class="btn-primary" type="button">Realizar otro intento</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Overlay de pausa: tres opciones, igual al patrón del prototipo -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-overlay-box">
+      <h2>Test en pausa</h2>
+      <button id="pausa-reanudar" class="btn-primary" type="button">Reanudar</button>
+      <button id="pausa-reiniciar" class="btn-primary" type="button">Reiniciar</button>
+      <button id="pausa-menu" class="btn-primary" type="button">Volver al menú</button>
+    </div>
+  </div>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página: el test de Exploración de Faro ---
+
+      function mostrarPantalla(idVisible) {
+        ["screen-gate", "screen-instrucciones", "screen-config", "screen-test", "screen-resultados"].forEach(
+          (id) => {
+            document.getElementById(id).hidden = id !== idVisible;
+          }
+        );
+      }
+
+      // ===== Instrucciones (carrusel) =====
+      const SLIDES = [
+        {
+          titulo: "Exploración de Faro",
+          lineas: [
+            "Vas a controlar una linterna que se mueve por una pantalla oscura.",
+            "Movés el joystick para mover el haz de luz y buscar objetivos escondidos.",
+          ],
+        },
+        {
+          titulo: "Solo ves lo que ilumina la linterna",
+          lineas: [
+            "El resto de la pantalla queda completamente oscuro.",
+            "Tenés que recorrer activamente toda la pantalla para encontrar los objetivos.",
+          ],
+        },
+        {
+          titulo: "Cómo marcar un objetivo",
+          lineas: [
+            "Cuando un objetivo entra en el círculo de luz, se vuelve visible.",
+            "Presioná el botón del joystick para marcarlo como encontrado.",
+          ],
+        },
+        {
+          titulo: "Recorré toda la pantalla",
+          lineas: [
+            "Puede haber objetivos en cualquier parte, incluso en los bordes.",
+            "Si te quedás solo en el centro, vas a omitir objetivos sin darte cuenta.",
+          ],
+        },
+        {
+          titulo: "El botón de pausa",
+          lineas: [
+            "En cualquier momento podés pausar el test con el botón de pausa del control.",
+            "Al pausar aparecen tres opciones: Reanudar, Reiniciar o Volver al menú.",
+          ],
+        },
+        {
+          titulo: "¡Todo listo!",
+          lineas: [
+            "Vas a tener un tiempo limitado para encontrar todos los objetivos.",
+            "Cuando estés listo, presioná Iniciar.",
+          ],
+        },
+      ];
+      let slideActual = 0;
+
+      function dibujarVisual(i) {
+        if (i === 0) {
+          return `
+            <div class="faro-demo-stage">
+              <div class="faro-demo-spot" style="top: 45px; left: 100px;"></div>
+              <div class="faro-demo-cursor" style="top: 96px; left: 151px;"></div>
+            </div>
+            <p class="stroop-example-label">El joystick mueve el círculo de luz</p>
+          `;
+        }
+        if (i === 1) {
+          return `
+            <div class="faro-demo-stage">
+              <div class="faro-demo-spot" style="top: 45px; left: 100px;"></div>
+              <div class="faro-demo-cursor" style="top: 96px; left: 151px;"></div>
+              <div class="faro-demo-target faro-demo-target-oculto" style="top: 14px; left: 14px;"></div>
+              <div class="faro-demo-target faro-demo-target-oculto" style="top: 116px; left: 220px;"></div>
+            </div>
+            <p class="stroop-example-label">Fuera del círculo, todo queda oculto</p>
+          `;
+        }
+        if (i === 2) {
+          return `
+            <div class="faro-demo-stage">
+              <div class="faro-demo-spot" style="top: 45px; left: 100px;"></div>
+              <div class="faro-demo-target" style="top: 80px; left: 140px;"></div>
+              <div class="faro-demo-click" style="top: 72px; left: 132px;"></div>
+              <div class="faro-demo-cursor" style="top: 96px; left: 151px;"></div>
+            </div>
+            <p class="stroop-example-label color-verde">Botón del joystick para marcarlo ✓</p>
+          `;
+        }
+        if (i === 3) {
+          return `
+            <div class="faro-demo-stage">
+              <div class="faro-demo-spot" style="top: 10px; left: 10px;"></div>
+              <div class="faro-demo-target" style="top: 40px; left: 50px;"></div>
+              <div class="faro-demo-target faro-demo-target-oculto" style="top: 110px; left: 230px;"></div>
+              <div class="faro-demo-target faro-demo-target-oculto" style="top: 10px; left: 240px;"></div>
+              <div class="faro-demo-target faro-demo-target-oculto" style="top: 110px; left: 20px;"></div>
+              <div class="faro-demo-cursor" style="top: 60px; left: 65px;"></div>
+            </div>
+            <p class="stroop-example-label">Recorré todos los rincones de la pantalla</p>
+          `;
+        }
+        if (i === 4) {
+          return `
+            <div class="pause-example">
+              <div class="pause-example-icon">II</div>
+              <div class="pause-example-options">
+                <span class="pause-example-option bg-verde">Reanudar</span>
+                <span class="pause-example-option bg-rojo">Reiniciar</span>
+                <span class="pause-example-option bg-amarillo">Volver al menú</span>
+              </div>
+            </div>
+          `;
+        }
+        return `<div class="success-check">✓</div>`;
+      }
+
+      function mostrarSlide(i) {
+        slideActual = i;
+        const slide = SLIDES[i];
+        document.getElementById("carousel-titulo").textContent = `Paso ${i + 1} de ${SLIDES.length}`;
+        document.getElementById("carousel-contenido").innerHTML = `
+          <h2 class="carousel-slide-titulo">${slide.titulo}</h2>
+          <div class="carousel-slide-lineas">${slide.lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        `;
+        document.getElementById("carousel-visual").innerHTML = dibujarVisual(i);
+        document.getElementById("carousel-dots").innerHTML = SLIDES.map(
+          (_, idx) => `<span class="carousel-dot${idx === i ? " activo" : ""}"></span>`
+        ).join("");
+
+        document.getElementById("carousel-anterior").disabled = i === 0;
+        const esUltimo = i === SLIDES.length - 1;
+        document.getElementById("carousel-saltear").hidden = esUltimo;
+        document.getElementById("carousel-siguiente").textContent = esUltimo ? "Continuar" : "Siguiente →";
+      }
+
+      document.getElementById("carousel-anterior").addEventListener("click", () => {
+        if (slideActual > 0) mostrarSlide(slideActual - 1);
+      });
+      document.getElementById("carousel-saltear").addEventListener("click", () => {
+        mostrarSlide(SLIDES.length - 1);
+      });
+      document.getElementById("carousel-siguiente").addEventListener("click", () => {
+        if (slideActual < SLIDES.length - 1) {
+          mostrarSlide(slideActual + 1);
+        } else {
+          mostrarPantalla("screen-config");
+        }
+      });
+
+      // ===== Pantalla inicial: gate de paciente o instrucciones =====
+      if (!paciente) {
+        mostrarPantalla("screen-gate");
+      } else {
+        mostrarPantalla("screen-instrucciones");
+        mostrarSlide(0);
+      }
+
+      // ===== Configuración =====
+      let contrasteElegido = "alto";
+
+      document.querySelectorAll(".level-option").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          contrasteElegido = boton.dataset.contraste;
+          document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+          boton.classList.add("selected");
+        });
+      });
+
+      let cantidadObjetivos = 12;
+      let tiempoDisponibleSeg = 90;
+      let radioLinterna = 110;
+      let radioObjetivo = 22;
+
+      document.getElementById("config-continuar").addEventListener("click", () => {
+        function leerNumero(id, defecto, minimo, maximo) {
+          let valor = parseInt(document.getElementById(id).value, 10);
+          if (isNaN(valor)) valor = defecto;
+          return Math.min(maximo, Math.max(minimo, valor));
+        }
+
+        cantidadObjetivos = leerNumero("config-cantidad", 12, 6, 30);
+        tiempoDisponibleSeg = leerNumero("config-tiempo", 90, 30, 300);
+        radioLinterna = leerNumero("config-radio-linterna", 110, 60, 200);
+        radioObjetivo = leerNumero("config-radio-objetivo", 22, 15, 40);
+
+        iniciarTest();
+      });
+
+      // ===== El test en sí =====
+      const COLORES_CONTRASTE = {
+        alto: "#ffe066",
+        medio: "#9c8a4a",
+        bajo: "#3a3a30",
+      };
+      const ANCHO_CANVAS = 820;
+      const ALTO_CANVAS = 460;
+      const GRID_COLS = 40;
+      const GRID_ROWS = 23;
+      const CELDA_ANCHO = ANCHO_CANVAS / GRID_COLS;
+      const CELDA_ALTO = ALTO_CANVAS / GRID_ROWS;
+
+      const canvas = document.getElementById("faro-canvas");
+      const ctx = canvas.getContext("2d");
+
+      let objetivos = [];
+      let grid = [];
+      let cursorX = ANCHO_CANVAS / 2;
+      let cursorY = ALTO_CANVAS / 2;
+      let pausado = false;
+      let testTerminado = false;
+      let tInicioTest = null;
+      let tPausaAcumMs = 0;
+      let tPausaInicio = null;
+      let tiempoRestanteSeg = 0;
+      let timerInterval = null;
+      let animFrameId = null;
+      let primerHallazgoIzqMs = null;
+      let primerHallazgoDerMs = null;
+      let feedbackEncontrados = [];
+      let metricasFinal = null;
+
+      function generarObjetivos(cantidad, radio) {
+        const margen = radio + 10;
+        const lista = [];
+
+        function posicionValida(x, y) {
+          return lista.every((o) => Math.hypot(o.x - x, o.y - y) >= radio * 2.2);
+        }
+
+        function generarLado(cantidadLado, esIzquierda) {
+          const minX = esIzquierda ? margen : ANCHO_CANVAS / 2 + margen;
+          const maxX = esIzquierda ? ANCHO_CANVAS / 2 - margen : ANCHO_CANVAS - margen;
+          for (let i = 0; i < cantidadLado; i++) {
+            let x, y, intentos = 0;
+            do {
+              x = minX + Math.random() * (maxX - minX);
+              y = margen + Math.random() * (ALTO_CANVAS - margen * 2);
+              intentos++;
+            } while (!posicionValida(x, y) && intentos < 200);
+            lista.push({ x, y, lado: esIzquierda ? "izquierda" : "derecha", encontrado: false, tEncontradoMs: null });
+          }
+        }
+
+        const mitad = Math.floor(cantidad / 2);
+        generarLado(mitad, true);
+        generarLado(cantidad - mitad, false);
+        return lista;
+      }
+
+      function marcarCobertura() {
+        const colMin = Math.max(0, Math.floor((cursorX - radioLinterna) / CELDA_ANCHO));
+        const colMax = Math.min(GRID_COLS - 1, Math.floor((cursorX + radioLinterna) / CELDA_ANCHO));
+        const rowMin = Math.max(0, Math.floor((cursorY - radioLinterna) / CELDA_ALTO));
+        const rowMax = Math.min(GRID_ROWS - 1, Math.floor((cursorY + radioLinterna) / CELDA_ALTO));
+
+        for (let row = rowMin; row <= rowMax; row++) {
+          for (let col = colMin; col <= colMax; col++) {
+            const cx = col * CELDA_ANCHO + CELDA_ANCHO / 2;
+            const cy = row * CELDA_ALTO + CELDA_ALTO / 2;
+            if (Math.hypot(cx - cursorX, cy - cursorY) <= radioLinterna) {
+              grid[row][col] = true;
+            }
+          }
+        }
+      }
+
+      function dibujar() {
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, ANCHO_CANVAS, ALTO_CANVAS);
+
+        const gradiente = ctx.createRadialGradient(cursorX, cursorY, 0, cursorX, cursorY, radioLinterna);
+        gradiente.addColorStop(0, "rgba(255,255,255,0.18)");
+        gradiente.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = gradiente;
+        ctx.beginPath();
+        ctx.arc(cursorX, cursorY, radioLinterna, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.35)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cursorX, cursorY, radioLinterna, 0, Math.PI * 2);
+        ctx.stroke();
+
+        objetivos.forEach((o) => {
+          if (o.encontrado) return;
+          if (Math.hypot(o.x - cursorX, o.y - cursorY) <= radioLinterna) {
+            ctx.fillStyle = COLORES_CONTRASTE[contrasteElegido];
+            ctx.beginPath();
+            ctx.arc(o.x, o.y, radioObjetivo, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+
+        const ahora = Date.now();
+        feedbackEncontrados = feedbackEncontrados.filter((f) => ahora - f.t < 600);
+        feedbackEncontrados.forEach((f) => {
+          const progreso = (ahora - f.t) / 600;
+          ctx.globalAlpha = 1 - progreso;
+          ctx.strokeStyle = "#2da34d";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, radioObjetivo + progreso * 14, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        });
+      }
+
+      function loopAnim() {
+        if (!document.getElementById("screen-test").hidden && !pausado && !testTerminado) {
+          dibujar();
+        }
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function actualizarPosicionCursor(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const escalaX = ANCHO_CANVAS / rect.width;
+        const escalaY = ALTO_CANVAS / rect.height;
+        cursorX = Math.max(0, Math.min(ANCHO_CANVAS, (clientX - rect.left) * escalaX));
+        cursorY = Math.max(0, Math.min(ALTO_CANVAS, (clientY - rect.top) * escalaY));
+        marcarCobertura();
+      }
+
+      canvas.addEventListener("mousemove", (event) => {
+        if (pausado || testTerminado) return;
+        actualizarPosicionCursor(event.clientX, event.clientY);
+      });
+
+      function actualizarProgreso() {
+        const encontrados = objetivos.filter((o) => o.encontrado).length;
+        document.getElementById("faro-progreso").textContent =
+          `Objetivos encontrados: ${encontrados} / ${cantidadObjetivos} · Tiempo restante: ${tiempoRestanteSeg}s`;
+      }
+
+      function intentarSeleccionar() {
+        if (pausado || testTerminado) return;
+        let mejor = null;
+        let mejorDist = Infinity;
+        objetivos.forEach((o) => {
+          if (o.encontrado) return;
+          const dist = Math.hypot(o.x - cursorX, o.y - cursorY);
+          if (dist <= radioLinterna && dist < mejorDist) {
+            mejor = o;
+            mejorDist = dist;
+          }
+        });
+        if (!mejor) return;
+
+        mejor.encontrado = true;
+        const ahoraMs = Date.now() - tInicioTest - tPausaAcumMs;
+        mejor.tEncontradoMs = ahoraMs;
+        if (mejor.lado === "izquierda" && primerHallazgoIzqMs === null) primerHallazgoIzqMs = ahoraMs;
+        if (mejor.lado === "derecha" && primerHallazgoDerMs === null) primerHallazgoDerMs = ahoraMs;
+        feedbackEncontrados.push({ x: mejor.x, y: mejor.y, t: Date.now() });
+        actualizarProgreso();
+
+        if (objetivos.every((o) => o.encontrado)) finalizarTest();
+      }
+
+      canvas.addEventListener("click", intentarSeleccionar);
+      document.addEventListener("keydown", (event) => {
+        if (document.getElementById("screen-test").hidden) return;
+        if (event.code === "Space") {
+          event.preventDefault();
+          intentarSeleccionar();
+        }
+      });
+
+      function tickTimer() {
+        if (pausado || testTerminado) return;
+        tiempoRestanteSeg -= 1;
+        actualizarProgreso();
+        if (tiempoRestanteSeg <= 0) finalizarTest();
+      }
+
+      function iniciarTest() {
+        objetivos = generarObjetivos(cantidadObjetivos, radioObjetivo);
+        grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(false));
+        cursorX = ANCHO_CANVAS / 2;
+        cursorY = ALTO_CANVAS / 2;
+        pausado = false;
+        testTerminado = false;
+        tPausaAcumMs = 0;
+        primerHallazgoIzqMs = null;
+        primerHallazgoDerMs = null;
+        feedbackEncontrados = [];
+        tiempoRestanteSeg = tiempoDisponibleSeg;
+
+        mostrarPantalla("screen-test");
+        actualizarProgreso();
+        dibujar();
+
+        tInicioTest = Date.now();
+        clearInterval(timerInterval);
+        timerInterval = setInterval(tickTimer, 1000);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        animFrameId = requestAnimationFrame(loopAnim);
+      }
+
+      function finalizarTest() {
+        if (testTerminado) return;
+        testTerminado = true;
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        mostrarResultados();
+      }
+
+      // --- Pausa: tres opciones, igual al patrón reutilizado del prototipo ---
+      document.getElementById("btn-pausa").addEventListener("click", () => {
+        if (pausado || testTerminado) return;
+        pausado = true;
+        tPausaInicio = Date.now();
+        document.getElementById("pause-overlay").hidden = false;
+      });
+
+      document.getElementById("pausa-reanudar").addEventListener("click", () => {
+        pausado = false;
+        tPausaAcumMs += Date.now() - tPausaInicio;
+        document.getElementById("pause-overlay").hidden = true;
+      });
+
+      document.getElementById("pausa-reiniciar").addEventListener("click", () => {
+        document.getElementById("pause-overlay").hidden = true;
+        iniciarTest();
+      });
+
+      document.getElementById("pausa-menu").addEventListener("click", () => {
+        clearInterval(timerInterval);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        window.location.href = "/pages/test-detail.html?slug=faro";
+      });
+
+      // ===== Resultados =====
+      function claseSeveridad(nivel) {
+        if (nivel === "Normal") return "color-verde";
+        if (nivel === "Leve") return "color-amarillo";
+        if (nivel === "Moderado") return "color-naranja";
+        return "color-rojo";
+      }
+
+      function calcularMetricas() {
+        const izquierdos = objetivos.filter((o) => o.lado === "izquierda");
+        const derechos = objetivos.filter((o) => o.lado === "derecha");
+        const izqEncontrados = izquierdos.filter((o) => o.encontrado).length;
+        const derEncontrados = derechos.filter((o) => o.encontrado).length;
+
+        // 1. Índice de omisión izquierda (Albert's Test / Star Cancellation)
+        const io = (izquierdos.length - izqEncontrados) / izquierdos.length;
+        const ioPct = Math.round(io * 1000) / 10;
+        let clasifIo;
+        if (ioPct < 10) clasifIo = "Normal";
+        else if (ioPct < 20) clasifIo = "Leve";
+        else if (ioPct < 40) clasifIo = "Moderado";
+        else clasifIo = "Severo";
+
+        // 2. Asimetría izquierda-derecha
+        const asimetria = (derEncontrados + izqEncontrados) > 0
+          ? (derEncontrados - izqEncontrados) / (derEncontrados + izqEncontrados)
+          : 0;
+        const asimAbs = Math.abs(asimetria);
+        let clasifAsim;
+        if (asimAbs < 0.10) clasifAsim = "Normal";
+        else if (asimAbs < 0.20) clasifAsim = "Leve";
+        else if (asimAbs < 0.40) clasifAsim = "Moderado";
+        else clasifAsim = "Severo";
+
+        // 3. Center of Cancellation (Rorden & Karnath, 2010): posición horizontal
+        // media de los objetivos ENCONTRADOS, recentrada contra el centro de
+        // TODOS los objetivos generados y normalizada a un rango de -1 a 1
+        // (mitad del rango horizontal total). 0 = sin sesgo espacial.
+        const centroX = objetivos.reduce((a, o) => a + o.x, 0) / objetivos.length;
+        const xs = objetivos.map((o) => o.x);
+        const mitadRango = (Math.max(...xs) - Math.min(...xs)) / 2;
+        const encontrados = objetivos.filter((o) => o.encontrado);
+        let coc = 0;
+        if (encontrados.length > 0) {
+          const mediaEncontrados = encontrados.reduce((a, o) => a + o.x, 0) / encontrados.length;
+          coc = (mediaEncontrados - centroX) / mitadRango;
+        }
+        const cocAbs = Math.abs(coc);
+        let clasifCoc;
+        if (cocAbs < 0.081) clasifCoc = "Normal";
+        else if (cocAbs < 0.20) clasifCoc = "Leve";
+        else if (cocAbs < 0.40) clasifCoc = "Moderado";
+        else clasifCoc = "Severo";
+
+        // 4. Latencia al primer objetivo izquierdo vs. derecho
+        let ratioLatencia = null;
+        let clasifLatencia = null;
+        if (primerHallazgoIzqMs !== null && primerHallazgoDerMs !== null && primerHallazgoDerMs > 0) {
+          ratioLatencia = primerHallazgoIzqMs / primerHallazgoDerMs;
+          if (ratioLatencia < 2) clasifLatencia = "Normal";
+          else if (ratioLatencia < 4) clasifLatencia = "Leve";
+          else if (ratioLatencia < 8) clasifLatencia = "Moderado";
+          else clasifLatencia = "Severo";
+        }
+
+        // 5. Cobertura espacial izquierda y derecha
+        let celdasIzqTotales = 0, celdasIzqVisitadas = 0, celdasDerTotales = 0, celdasDerVisitadas = 0;
+        for (let row = 0; row < GRID_ROWS; row++) {
+          for (let col = 0; col < GRID_COLS; col++) {
+            const esIzquierda = col * CELDA_ANCHO + CELDA_ANCHO / 2 < ANCHO_CANVAS / 2;
+            if (esIzquierda) {
+              celdasIzqTotales++;
+              if (grid[row][col]) celdasIzqVisitadas++;
+            } else {
+              celdasDerTotales++;
+              if (grid[row][col]) celdasDerVisitadas++;
+            }
+          }
+        }
+        const coberturaIzqPct = Math.round((celdasIzqVisitadas / celdasIzqTotales) * 1000) / 10;
+        const coberturaDerPct = Math.round((celdasDerVisitadas / celdasDerTotales) * 1000) / 10;
+        let clasifCobertura;
+        if (coberturaIzqPct > 80) clasifCobertura = "Normal";
+        else if (coberturaIzqPct > 60) clasifCobertura = "Leve";
+        else if (coberturaIzqPct > 40) clasifCobertura = "Moderado";
+        else clasifCobertura = "Severo";
+
+        return {
+          cantidad_objetivos: cantidadObjetivos,
+          objetivos_izquierdos_totales: izquierdos.length,
+          objetivos_izquierdos_encontrados: izqEncontrados,
+          objetivos_derechos_totales: derechos.length,
+          objetivos_derechos_encontrados: derEncontrados,
+          indice_omision_izquierda_pct: ioPct,
+          clasificacion_omision: clasifIo,
+          asimetria_izq_der: Math.round(asimetria * 1000) / 1000,
+          clasificacion_asimetria: clasifAsim,
+          center_of_cancellation: Math.round(coc * 1000) / 1000,
+          clasificacion_coc: clasifCoc,
+          latencia_primer_objetivo_izquierdo_ms: primerHallazgoIzqMs,
+          latencia_primer_objetivo_derecho_ms: primerHallazgoDerMs,
+          ratio_latencia_izq_der: ratioLatencia !== null ? Math.round(ratioLatencia * 100) / 100 : null,
+          clasificacion_latencia: clasifLatencia,
+          cobertura_espacial_izquierda_pct: coberturaIzqPct,
+          cobertura_espacial_derecha_pct: coberturaDerPct,
+          clasificacion_cobertura: clasifCobertura,
+          tiempo_utilizado_seg: tiempoDisponibleSeg - tiempoRestanteSeg,
+        };
+      }
+
+      function mostrarResultados() {
+        metricasFinal = calcularMetricas();
+        const m = metricasFinal;
+        const totalEncontrados = m.objetivos_izquierdos_encontrados + m.objetivos_derechos_encontrados;
+
+        document.getElementById("resultados-resumen").innerHTML = `
+          <p><strong>Objetivos encontrados:</strong> ${totalEncontrados} / ${m.cantidad_objetivos}</p>
+          <p><strong>Izquierda:</strong> ${m.objetivos_izquierdos_encontrados} / ${m.objetivos_izquierdos_totales} encontrados ·
+             <strong>Derecha:</strong> ${m.objetivos_derechos_encontrados} / ${m.objetivos_derechos_totales} encontrados</p>
+          <p><strong>Tiempo utilizado:</strong> ${m.tiempo_utilizado_seg}s de ${tiempoDisponibleSeg}s</p>
+          <hr />
+          <p><strong>Índice de omisión izquierda:</strong> ${m.indice_omision_izquierda_pct}% —
+             <span class="${claseSeveridad(m.clasificacion_omision)}">${m.clasificacion_omision}</span></p>
+          <p><strong>Asimetría izquierda-derecha:</strong> ${m.asimetria_izq_der} —
+             <span class="${claseSeveridad(m.clasificacion_asimetria)}">${m.clasificacion_asimetria}</span></p>
+          <p><strong>Center of Cancellation:</strong> ${m.center_of_cancellation} —
+             <span class="${claseSeveridad(m.clasificacion_coc)}">${m.clasificacion_coc}</span></p>
+          <p><strong>Latencia al primer objetivo izquierdo:</strong> ${m.latencia_primer_objetivo_izquierdo_ms ?? "No encontró ninguno"} ms</p>
+          <p><strong>Latencia al primer objetivo derecho:</strong> ${m.latencia_primer_objetivo_derecho_ms ?? "No encontró ninguno"} ms</p>
+          ${
+            m.clasificacion_latencia
+              ? `<p><strong>Ratio de latencia (izquierda/derecha):</strong> ${m.ratio_latencia_izq_der} —
+                 <span class="${claseSeveridad(m.clasificacion_latencia)}">${m.clasificacion_latencia}</span></p>`
+              : ""
+          }
+          <p><strong>Cobertura espacial izquierda:</strong> ${m.cobertura_espacial_izquierda_pct}% —
+             <span class="${claseSeveridad(m.clasificacion_cobertura)}">${m.clasificacion_cobertura}</span></p>
+          <p><strong>Cobertura espacial derecha:</strong> ${m.cobertura_espacial_derecha_pct}%</p>
+        `;
+        mostrarPantalla("screen-resultados");
+      }
+
+      document.getElementById("btn-guardar").addEventListener("click", async () => {
+        const comentario = document.getElementById("comentario-clinico").value.trim();
+        const detalle = objetivos.map((o, i) => ({
+          numero_estimulo: i + 1,
+          estimulo: `objetivo lado ${o.lado} en (${Math.round(o.x)}, ${Math.round(o.y)})`,
+          respuesta: o.encontrado ? "encontrado" : "omitido",
+          correcto: o.encontrado,
+          tipo_error: o.encontrado ? null : "omision",
+          rt_ms: o.tEncontradoMs,
+        }));
+
+        const respuesta = await fetch("/api/resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paciente_id: paciente.id,
+            test_slug: "faro",
+            parametros: {
+              cantidad_objetivos: cantidadObjetivos,
+              tiempo_disponible_seg: tiempoDisponibleSeg,
+              radio_linterna_px: radioLinterna,
+              radio_objetivo_px: radioObjetivo,
+              contraste: contrasteElegido,
+            },
+            metricas: metricasFinal,
+            detalle: detalle,
+            comentarios_medico: comentario || null,
+          }),
+        });
+        const datos = await respuesta.json();
+        const mensaje = document.getElementById("guardado-msg");
+
+        if (respuesta.ok) {
+          mensaje.className = "info-box";
+          mensaje.textContent = "Resultado guardado correctamente.";
+          mensaje.hidden = false;
+          document.getElementById("acciones-resultado").hidden = true;
+          document.getElementById("acciones-post-guardado").hidden = false;
+        } else {
+          mensaje.className = "error-box";
+          mensaje.textContent = `No se pudo guardar: ${datos.detail}`;
+          mensaje.hidden = false;
+        }
+      });
+
+      document.getElementById("btn-descartar").addEventListener("click", () => {
+        const mensaje = document.getElementById("guardado-msg");
+        mensaje.className = "info-box";
+        mensaje.textContent = "Resultado descartado.";
+        mensaje.hidden = false;
+        document.getElementById("acciones-resultado").hidden = true;
+        document.getElementById("acciones-post-guardado").hidden = false;
+      });
+
+      document.getElementById("btn-otro-intento").addEventListener("click", () => {
+        document.getElementById("acciones-resultado").hidden = false;
+        document.getElementById("acciones-post-guardado").hidden = true;
+        document.getElementById("guardado-msg").hidden = true;
+        document.getElementById("comentario-clinico").value = "";
+
+        mostrarPantalla("screen-config");
+      });
+    }
+  </script>
+</body>
+</html>

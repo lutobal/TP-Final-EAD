@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <h1 class="login-title">NeuroRehab Platform</h1>
+    <p class="login-subtitle">Plataforma de evaluación cognitivo-motora</p>
+
+    <div class="tabs">
+      <button id="tab-login" class="tab active" type="button">Iniciar sesión</button>
+      <button id="tab-registro" class="tab" type="button">Registrarse</button>
+    </div>
+
+    <p id="error-box" class="error-box" hidden></p>
+
+    <form id="login-form" class="form">
+      <label for="login-usuario">Usuario</label>
+      <input id="login-usuario" type="text" autocomplete="username" />
+
+      <label for="login-password">Contraseña</label>
+      <input id="login-password" type="password" autocomplete="current-password" />
+
+      <button type="submit" class="btn-primary">Iniciar sesión</button>
+    </form>
+
+    <form id="registro-form" class="form" hidden>
+      <label for="registro-nombre">Nombre completo</label>
+      <input id="registro-nombre" type="text" autocomplete="name" />
+
+      <label for="registro-usuario">Usuario</label>
+      <input id="registro-usuario" type="text" autocomplete="username" />
+
+      <label for="registro-password">Contraseña</label>
+      <input id="registro-password" type="password" autocomplete="new-password" />
+
+      <label for="registro-confirmar">Confirmar contraseña</label>
+      <input id="registro-confirmar" type="password" autocomplete="new-password" />
+
+      <button type="submit" class="btn-primary">Crear cuenta</button>
+    </form>
+  </main>
+
+  <!--
+    Todo el JavaScript de esta pantalla está acá adentro, en orden:
+    1. Si ya había una sesión guardada, vamos directo a home.
+    2. Cambiar entre la pestaña "Iniciar sesión" y "Registrarse".
+    3. Qué hacer cuando se envía cada formulario.
+  -->
+  <script>
+    if (sessionStorage.getItem("medico")) {
+      window.location.href = "/pages/home.html";
+    }
+
+    const loginForm = document.getElementById("login-form");
+    const registroForm = document.getElementById("registro-form");
+    const tabLogin = document.getElementById("tab-login");
+    const tabRegistro = document.getElementById("tab-registro");
+    const errorBox = document.getElementById("error-box");
+
+    function mostrarError(mensaje) {
+      errorBox.textContent = mensaje;
+      errorBox.hidden = false;
+    }
+
+    function limpiarError() {
+      errorBox.hidden = true;
+      errorBox.textContent = "";
+    }
+
+    tabLogin.addEventListener("click", () => {
+      loginForm.hidden = false;
+      registroForm.hidden = true;
+      tabLogin.classList.add("active");
+      tabRegistro.classList.remove("active");
+      limpiarError();
+    });
+
+    tabRegistro.addEventListener("click", () => {
+      loginForm.hidden = true;
+      registroForm.hidden = false;
+      tabRegistro.classList.add("active");
+      tabLogin.classList.remove("active");
+      limpiarError();
+    });
+
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      limpiarError();
+
+      const usuario = document.getElementById("login-usuario").value.trim();
+      const password = document.getElementById("login-password").value;
+
+      if (!usuario || !password) {
+        mostrarError("Usuario y contraseña son obligatorios.");
+        return;
+      }
+
+      const respuesta = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario, password }),
+      });
+      const datos = await respuesta.json();
+
+      if (!respuesta.ok) {
+        mostrarError(datos.detail);
+        return;
+      }
+
+      sessionStorage.setItem("medico", JSON.stringify(datos));
+      window.location.href = "/pages/home.html";
+    });
+
+    registroForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      limpiarError();
+
+      const usuario = document.getElementById("registro-usuario").value.trim();
+      const nombre = document.getElementById("registro-nombre").value.trim();
+      const password = document.getElementById("registro-password").value;
+      const confirmar = document.getElementById("registro-confirmar").value;
+
+      if (!usuario || !nombre || !password || !confirmar) {
+        mostrarError("Todos los campos son obligatorios.");
+        return;
+      }
+      if (password !== confirmar) {
+        mostrarError("Las contraseñas no coinciden.");
+        return;
+      }
+
+      const respuesta = await fetch("/api/auth/registro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usuario,
+          password,
+          confirmar_password: confirmar,
+          nombre,
+        }),
+      });
+      const datos = await respuesta.json();
+
+      if (!respuesta.ok) {
+        mostrarError(datos.detail);
+        return;
+      }
+
+      sessionStorage.setItem("medico", JSON.stringify(datos));
+      window.location.href = "/pages/home.html";
+    });
+  </script>
+</body>
+</html>

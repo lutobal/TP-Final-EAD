@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detalle de test — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content" id="test-detail">
+    <p>Cargando...</p>
+  </main>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página ---
+      const container = document.getElementById("test-detail");
+      const slug = new URLSearchParams(window.location.search).get("slug");
+
+      // Solo algunos tests (por ahora, Faro) tienen sus métricas clínicas
+      // definidas con detalle (qué miden, cómo se calculan, y su tabla de
+      // interpretación); el resto sigue mostrando solo la lista simple de
+      // "Variables registradas".
+      function dibujarMetricasDetalle(metricas) {
+        return `
+          <p><strong>Métricas calculadas y cómo se interpretan:</strong></p>
+          <div class="metricas-detalle">
+            ${metricas
+              .map(
+                (m) => `
+              <details class="historial-item metrica-detalle">
+                <summary>${m.nombre}</summary>
+                <p><strong>Qué mide:</strong> ${m.que_mide}</p>
+                <p><strong>Cómo se calcula:</strong> ${m.como_se_calcula}</p>
+                <table class="historial-detalle-tabla">
+                  <thead>
+                    <tr><th>Resultado</th><th>Interpretación</th></tr>
+                  </thead>
+                  <tbody>
+                    ${m.interpretacion.map((i) => `<tr><td>${i.rango}</td><td>${i.nivel}</td></tr>`).join("")}
+                  </tbody>
+                </table>
+              </details>
+            `
+              )
+              .join("")}
+          </div>
+        `;
+      }
+
+      async function cargarTest() {
+        if (!slug) {
+          container.innerHTML = `<p class="error-box">No se especificó un test.</p>`;
+          return;
+        }
+
+        const respuesta = await fetch(`/api/tests/${slug}`);
+        const test = await respuesta.json();
+
+        if (!respuesta.ok) {
+          container.innerHTML = `<p class="error-box">${test.detail}</p>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <a href="/pages/home.html" class="back-link">← Volver a tests disponibles</a>
+          <h1>${test.nombre}</h1>
+          <p><strong>Evalúa:</strong> ${test.evalua}</p>
+          <p><strong>Cómo funciona:</strong> ${test.funcionamiento}</p>
+          <p><strong>Variables registradas:</strong></p>
+          <ul class="test-variables">
+            ${test.variables.map((v) => `<li>${v}</li>`).join("")}
+          </ul>
+          ${test.metricas_detalle ? dibujarMetricasDetalle(test.metricas_detalle) : ""}
+          <p><strong>Hardware utilizado:</strong> ${test.hardware}</p>
+          <p><strong>Bibliografía clínica:</strong> ${test.bibliografia_estado}</p>
+          <button id="iniciar-test" class="btn-primary" type="button">Realizar este test</button>
+          <p id="placeholder-msg" class="info-box" hidden>Este test todavía no está implementado.</p>
+        `;
+
+        // Tests que ya tienen su pantalla real implementada; el resto sigue
+        // mostrando el cartel de "todavía no implementado".
+        const TESTS_IMPLEMENTADOS = ["stroop", "faro", "tracking", "laberinto"];
+
+        document.getElementById("iniciar-test").addEventListener("click", () => {
+          if (TESTS_IMPLEMENTADOS.includes(slug)) {
+            window.location.href = `/pages/test-${slug}.html`;
+          } else {
+            document.getElementById("placeholder-msg").hidden = false;
+          }
+        });
+      }
+
+      cargarTest();
+    }
+  </script>
+</body>
+</html>

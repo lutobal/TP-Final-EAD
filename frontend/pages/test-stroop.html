@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Efecto Stroop — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <!-- Pantalla 1: se muestra solo si no hay paciente activo (sección 9.7) -->
+    <section id="screen-gate" hidden>
+      <h1>Antes de empezar</h1>
+      <p class="page-subtitle">Para realizar este test hace falta un paciente activo.</p>
+      <div class="form-inline">
+        <a class="btn-primary" href="/pages/pacientes.html?volver=stroop">Seleccionar paciente existente</a>
+        <a class="btn-primary" href="/pages/pacientes.html?volver=stroop&crear=1">Crear paciente nuevo</a>
+        <a class="btn-primary" href="/pages/test-detail.html?slug=stroop">Cancelar</a>
+      </div>
+    </section>
+
+    <!-- Pantalla 2: configuración (nivel + cantidad de estímulos) -->
+    <section id="screen-config" hidden>
+      <h1>Configuración del test</h1>
+
+      <h2>Nivel de dificultad</h2>
+      <div class="level-options">
+        <button class="level-option" data-nivel="facil" type="button">
+          <strong>Fácil</strong>
+          <span>La palabra y el color de la tinta siempre coinciden.</span>
+        </button>
+        <button class="level-option" data-nivel="intermedio" type="button">
+          <strong>Intermedio</strong>
+          <span>La mitad de las palabras no coinciden con el color.</span>
+        </button>
+        <button class="level-option" data-nivel="dificil" type="button">
+          <strong>Difícil</strong>
+          <span>Ninguna palabra coincide con el color de la tinta.</span>
+        </button>
+      </div>
+
+      <h2>Cantidad de estímulos</h2>
+      <div class="form-inline">
+        <label for="cantidad-custom">Cantidad (10 a 200):</label>
+        <input id="cantidad-custom" type="number" min="10" max="200" step="10" value="20" />
+      </div>
+
+      <p id="config-error" class="error-box" hidden>Tenés que elegir un nivel de dificultad antes de continuar.</p>
+      <button id="config-continuar" class="btn-primary" type="button">Iniciar</button>
+    </section>
+
+    <!-- Pantalla 3: instrucciones tipo carrusel -->
+    <section id="screen-instrucciones" hidden>
+      <div class="carousel-header">
+        <a href="/pages/test-detail.html?slug=stroop" class="back-link">Salir</a>
+        <span id="carousel-titulo"></span>
+      </div>
+      <div id="carousel-contenido"></div>
+      <div id="carousel-visual" class="carousel-visual"></div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="carousel-nav">
+        <button id="carousel-anterior" class="btn-primary" type="button">← Anterior</button>
+        <button id="carousel-saltear" class="btn-primary" type="button">Saltear</button>
+        <button id="carousel-siguiente" class="btn-primary" type="button">Siguiente →</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 4: el test en sí -->
+    <section id="screen-test" hidden>
+      <div class="stroop-header">
+        <div class="stroop-progreso" id="stroop-progreso"></div>
+        <button id="btn-pausa" class="pause-button" type="button" aria-label="Pausar" title="Pausar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="stroop-stimulus-area">
+        <div class="stroop-card" id="stroop-card" hidden>
+          <span id="stroop-word"></span>
+        </div>
+      </div>
+
+      <div class="color-buttons">
+        <button class="color-button rojo" data-color="rojo" type="button">
+          Rojo<span class="key-hint">1</span>
+        </button>
+        <button class="color-button verde" data-color="verde" type="button">
+          Verde<span class="key-hint">2</span>
+        </button>
+        <button class="color-button azul" data-color="azul" type="button">
+          Azul<span class="key-hint">3</span>
+        </button>
+        <button class="color-button amarillo" data-color="amarillo" type="button">
+          Amarillo<span class="key-hint">4</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Pantalla 5: resultados -->
+    <section id="screen-resultados" hidden>
+      <h1>Resultados</h1>
+      <div id="resultados-resumen"></div>
+
+      <label for="comentario-clinico">Comentario clínico (opcional)</label>
+      <textarea id="comentario-clinico" class="form" style="width: 100%; max-width: 480px;"></textarea>
+
+      <div class="form-inline" id="acciones-resultado">
+        <button id="btn-guardar" class="btn-primary" type="button">Guardar resultado</button>
+        <button id="btn-descartar" class="btn-primary" type="button">Descartar resultado</button>
+      </div>
+      <p id="guardado-msg" class="info-box" hidden></p>
+      <div class="form-inline" id="acciones-post-guardado" hidden>
+        <a href="/pages/home.html" class="btn-primary">Volver al inicio</a>
+        <button id="btn-otro-intento" class="btn-primary" type="button">Realizar otro intento</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Overlay de pausa: tres opciones, igual al patrón del prototipo -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-overlay-box">
+      <h2>Test en pausa</h2>
+      <button id="pausa-reanudar" class="btn-primary" type="button">Reanudar</button>
+      <button id="pausa-reiniciar" class="btn-primary" type="button">Reiniciar</button>
+      <button id="pausa-menu" class="btn-primary" type="button">Volver al menú</button>
+    </div>
+  </div>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página: el test de Stroop completo ---
+
+      function mostrarPantalla(idVisible) {
+        ["screen-gate", "screen-config", "screen-instrucciones", "screen-test", "screen-resultados"].forEach(
+          (id) => {
+            document.getElementById(id).hidden = id !== idVisible;
+          }
+        );
+      }
+
+      // ===== Configuración: nivel + cantidad de estímulos =====
+      let nivelElegido = null;
+      let cantidadElegida = 20;
+
+      document.querySelectorAll(".level-option").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          nivelElegido = boton.dataset.nivel;
+          document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+          boton.classList.add("selected");
+          document.getElementById("config-error").hidden = true;
+        });
+      });
+
+      document.getElementById("config-continuar").addEventListener("click", () => {
+        if (!nivelElegido) {
+          document.getElementById("config-error").hidden = false;
+          return;
+        }
+
+        let cantidad = parseInt(document.getElementById("cantidad-custom").value, 10);
+        if (isNaN(cantidad)) cantidad = 20;
+        cantidad = Math.min(200, Math.max(10, cantidad));
+        cantidadElegida = cantidad;
+
+        iniciarTest();
+      });
+
+      // ===== Instrucciones (carrusel) =====
+      const SLIDES = [
+        {
+          titulo: "Efecto Stroop",
+          lineas: [
+            "Aparece una palabra escrita en un color.",
+            "Tu tarea: indicar el COLOR DE LA TINTA, no lo que dice la palabra.",
+          ],
+        },
+        {
+          titulo: "Ejemplo: ignorá la palabra",
+          lineas: [
+            'La palabra dice "VERDE" pero está escrita en AMARILLO.',
+            "La respuesta correcta es AMARILLO: el color de la tinta, no lo que dice.",
+          ],
+        },
+        {
+          titulo: "Niveles de dificultad",
+          lineas: [
+            "Fácil: la palabra y el color siempre coinciden.",
+            "Intermedio: la mitad de las veces no coinciden.",
+            "Difícil: nunca coinciden.",
+          ],
+        },
+        {
+          titulo: "Cómo responder",
+          lineas: ["Presioná el botón del color de la TINTA en el control."],
+        },
+        {
+          titulo: "El botón de pausa",
+          lineas: [
+            "En cualquier momento podés pausar el test con el botón de pausa del control.",
+            "Al pausar aparecen tres opciones: Reanudar, Reiniciar o Volver al menú.",
+          ],
+        },
+        {
+          titulo: "¡Todo listo!",
+          lineas: [
+            "Vas a ver las palabras de a una.",
+            "Respondé con los botones de colores del control.",
+            "Cuando estés listo, presioná Iniciar.",
+          ],
+        },
+      ];
+      let slideActual = 0;
+
+      function dibujarVisual(i) {
+        if (i === 0) {
+          return `
+            <div class="stroop-example-card"><span class="color-azul">ROJO</span></div>
+            <div class="stroop-example-arrow">↓</div>
+            <p class="stroop-example-label color-azul">color de la TINTA (azul)</p>
+          `;
+        }
+        if (i === 1) {
+          return `
+            <div class="stroop-example-card"><span class="color-amarillo">VERDE</span></div>
+            <div class="mini-color-buttons">
+              <span class="mini-color-button bg-rojo">Rojo</span>
+              <span class="mini-color-button bg-verde">Verde</span>
+              <span class="mini-color-button bg-azul">Azul</span>
+              <span class="mini-color-button bg-amarillo correcto">Amarillo ✓</span>
+            </div>
+          `;
+        }
+        if (i === 2) {
+          return `
+            <div class="level-preview">
+              <div class="level-preview-row bg-verde">
+                <strong>Fácil</strong><span>La palabra y el color siempre coinciden</span>
+              </div>
+              <div class="level-preview-row bg-amarillo">
+                <strong>Intermedio</strong><span>La mitad de las veces no coinciden</span>
+              </div>
+              <div class="level-preview-row bg-rojo">
+                <strong>Difícil</strong><span>Nunca coinciden</span>
+              </div>
+            </div>
+          `;
+        }
+        if (i === 3) {
+          return `
+            <div class="color-buttons-preview">
+              <span class="color-button rojo">Rojo</span>
+              <span class="color-button verde">Verde</span>
+              <span class="color-button azul">Azul</span>
+              <span class="color-button amarillo">Amarillo</span>
+            </div>
+          `;
+        }
+        if (i === 4) {
+          return `
+            <div class="pause-example">
+              <div class="pause-example-icon">II</div>
+              <div class="pause-example-options">
+                <span class="pause-example-option bg-verde">Reanudar</span>
+                <span class="pause-example-option bg-rojo">Reiniciar</span>
+                <span class="pause-example-option bg-amarillo">Volver al menú</span>
+              </div>
+            </div>
+          `;
+        }
+        return `<div class="success-check">✓</div>`;
+      }
+
+      function mostrarSlide(i) {
+        slideActual = i;
+        const slide = SLIDES[i];
+        document.getElementById("carousel-titulo").textContent = `Paso ${i + 1} de ${SLIDES.length}`;
+        document.getElementById("carousel-contenido").innerHTML = `
+          <h2 class="carousel-slide-titulo">${slide.titulo}</h2>
+          <div class="carousel-slide-lineas">${slide.lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        `;
+        document.getElementById("carousel-visual").innerHTML = dibujarVisual(i);
+        document.getElementById("carousel-dots").innerHTML = SLIDES.map(
+          (_, idx) => `<span class="carousel-dot${idx === i ? " activo" : ""}"></span>`
+        ).join("");
+
+        document.getElementById("carousel-anterior").disabled = i === 0;
+        const esUltimo = i === SLIDES.length - 1;
+        document.getElementById("carousel-saltear").hidden = esUltimo;
+        document.getElementById("carousel-siguiente").textContent = esUltimo ? "Continuar" : "Siguiente →";
+      }
+
+      document.getElementById("carousel-anterior").addEventListener("click", () => {
+        if (slideActual > 0) mostrarSlide(slideActual - 1);
+      });
+      document.getElementById("carousel-saltear").addEventListener("click", () => {
+        mostrarSlide(SLIDES.length - 1);
+      });
+      document.getElementById("carousel-siguiente").addEventListener("click", () => {
+        if (slideActual < SLIDES.length - 1) {
+          mostrarSlide(slideActual + 1);
+        } else {
+          mostrarPantalla("screen-config");
+        }
+      });
+
+      // ===== Pantalla inicial: gate de paciente o instrucciones =====
+      if (!paciente) {
+        mostrarPantalla("screen-gate");
+      } else {
+        mostrarPantalla("screen-instrucciones");
+        mostrarSlide(0);
+      }
+
+      // ===== El test en sí =====
+      const COLORES = ["rojo", "verde", "azul", "amarillo"];
+      const TIEMPO_RESPUESTA_MS = 5000;
+      const FLASH_MS = 400;
+
+      let estimulos = [];
+      let idx = 0;
+      let respuestas = [];
+      let pausado = false;
+      let tInicioEstimulo = null;
+      let tiempoRestanteMs = TIEMPO_RESPUESTA_MS;
+      let timeoutId = null;
+
+      function elegirAlAzar(lista) {
+        return lista[Math.floor(Math.random() * lista.length)];
+      }
+
+      function generarEstimulos(nivel, cantidad) {
+        const lista = [];
+        for (let i = 0; i < cantidad; i++) {
+          const palabra = elegirAlAzar(COLORES);
+          let tinta = palabra;
+          let congruente = true;
+          if (nivel === "dificil") {
+            tinta = elegirAlAzar(COLORES.filter((c) => c !== palabra));
+            congruente = false;
+          }
+          lista.push({ palabra, tinta, congruente });
+        }
+
+        if (nivel === "intermedio") {
+          const indices = [...Array(cantidad).keys()];
+          for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+          }
+          const incongruentes = new Set(indices.slice(0, Math.floor(cantidad / 2)));
+          incongruentes.forEach((i) => {
+            const palabra = lista[i].palabra;
+            lista[i].tinta = elegirAlAzar(COLORES.filter((c) => c !== palabra));
+            lista[i].congruente = false;
+          });
+        }
+
+        return lista;
+      }
+
+      function iniciarTest() {
+        estimulos = generarEstimulos(nivelElegido, cantidadElegida);
+        idx = 0;
+        respuestas = [];
+        pausado = false;
+        mostrarPantalla("screen-test");
+        flashYMostrar();
+      }
+
+      function actualizarProgreso() {
+        document.getElementById("stroop-progreso").textContent =
+          `Estímulo ${Math.min(idx + 1, cantidadElegida)} / ${cantidadElegida}`;
+      }
+
+      function flashYMostrar() {
+        document.getElementById("stroop-card").hidden = true;
+        actualizarProgreso();
+        setTimeout(() => {
+          if (!pausado) mostrarEstimuloActual();
+        }, FLASH_MS);
+      }
+
+      function mostrarEstimuloActual() {
+        const estim = estimulos[idx];
+        const palabra = document.getElementById("stroop-word");
+        palabra.textContent = estim.palabra.toUpperCase();
+        palabra.className = `color-${estim.tinta}`;
+        document.getElementById("stroop-card").hidden = false;
+
+        tInicioEstimulo = Date.now();
+        tiempoRestanteMs = TIEMPO_RESPUESTA_MS;
+        timeoutId = setTimeout(() => registrarRespuesta(null), tiempoRestanteMs);
+      }
+
+      function registrarRespuesta(colorElegido) {
+        clearTimeout(timeoutId);
+        const estim = estimulos[idx];
+        const correcto = colorElegido === estim.tinta;
+        const rt = colorElegido !== null ? Date.now() - tInicioEstimulo : null;
+
+        respuestas.push({
+          numero: idx + 1,
+          palabra: estim.palabra,
+          tinta: estim.tinta,
+          congruente: estim.congruente,
+          elegido: colorElegido,
+          correcto,
+          rt,
+        });
+
+        idx += 1;
+        if (idx >= cantidadElegida) {
+          mostrarResultados();
+        } else {
+          flashYMostrar();
+        }
+      }
+
+      document.querySelectorAll(".color-button").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          if (pausado || document.getElementById("stroop-card").hidden) return;
+          registrarRespuesta(boton.dataset.color);
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (document.getElementById("screen-test").hidden || pausado) return;
+        if (document.getElementById("stroop-card").hidden) return;
+        const mapaTeclas = { "1": "rojo", "2": "verde", "3": "azul", "4": "amarillo" };
+        if (mapaTeclas[event.key]) {
+          registrarRespuesta(mapaTeclas[event.key]);
+        }
+      });
+
+      // --- Pausa: tres opciones, igual al patrón reutilizado del prototipo ---
+      document.getElementById("btn-pausa").addEventListener("click", () => {
+        if (pausado) return;
+        clearTimeout(timeoutId);
+        if (tInicioEstimulo && !document.getElementById("stroop-card").hidden) {
+          tiempoRestanteMs -= Date.now() - tInicioEstimulo;
+        }
+        pausado = true;
+        document.getElementById("pause-overlay").hidden = false;
+      });
+
+      document.getElementById("pausa-reanudar").addEventListener("click", () => {
+        pausado = false;
+        document.getElementById("pause-overlay").hidden = true;
+        if (!document.getElementById("stroop-card").hidden) {
+          tInicioEstimulo = Date.now();
+          timeoutId = setTimeout(() => registrarRespuesta(null), tiempoRestanteMs);
+        }
+      });
+
+      document.getElementById("pausa-reiniciar").addEventListener("click", () => {
+        clearTimeout(timeoutId);
+        document.getElementById("pause-overlay").hidden = true;
+        iniciarTest();
+      });
+
+      document.getElementById("pausa-menu").addEventListener("click", () => {
+        clearTimeout(timeoutId);
+        window.location.href = "/pages/test-detail.html?slug=stroop";
+      });
+
+      // ===== Resultados =====
+      let metricasFinal = null;
+
+      function calcularMetricas() {
+        const total = respuestas.length;
+        const correctas = respuestas.filter((r) => r.correcto).length;
+        const omisiones = respuestas.filter((r) => r.elegido === null).length;
+        const comisiones = respuestas.filter((r) => !r.correcto && r.elegido !== null).length;
+        const precision = Math.round((correctas / total) * 1000) / 10;
+
+        const rtsCorrectos = respuestas.filter((r) => r.correcto && r.rt !== null).map((r) => r.rt);
+        const rtPromedio = rtsCorrectos.length
+          ? Math.round(rtsCorrectos.reduce((a, b) => a + b, 0) / rtsCorrectos.length)
+          : null;
+
+        const rtsCong = respuestas
+          .filter((r) => r.congruente && r.correcto && r.rt !== null)
+          .map((r) => r.rt);
+        const rtsIncong = respuestas
+          .filter((r) => !r.congruente && r.correcto && r.rt !== null)
+          .map((r) => r.rt);
+        const rtCongProm = rtsCong.length ? Math.round(rtsCong.reduce((a, b) => a + b, 0) / rtsCong.length) : null;
+        const rtIncongProm = rtsIncong.length
+          ? Math.round(rtsIncong.reduce((a, b) => a + b, 0) / rtsIncong.length)
+          : null;
+
+        let efectoInterferencia = null;
+        if (nivelElegido === "intermedio" && rtCongProm !== null && rtIncongProm !== null) {
+          efectoInterferencia = rtIncongProm - rtCongProm;
+        }
+
+        let clasificacion, rangoEsperado;
+        if (nivelElegido === "facil") {
+          clasificacion = precision >= 98 ? "Normal" : precision >= 96 ? "Limítrofe" : "Patológico";
+          rangoEsperado = "Precisión esperada ≥ 98%";
+        } else {
+          clasificacion = precision >= 90 ? "Normal" : precision >= 80 ? "Limítrofe" : "Patológico";
+          rangoEsperado = "Precisión esperada ≥ 90%";
+        }
+
+        return {
+          nivel: nivelElegido,
+          estimulos_evaluados: total,
+          respuestas_correctas: correctas,
+          errores_omision: omisiones,
+          errores_comision: comisiones,
+          precision_porcentaje: precision,
+          tiempo_reaccion_promedio_ms: rtPromedio,
+          rango_esperado_precision: rangoEsperado,
+          clasificacion: clasificacion,
+          efecto_interferencia_ms: efectoInterferencia,
+          rt_congruente_promedio_ms: rtCongProm,
+          rt_incongruente_promedio_ms: rtIncongProm,
+        };
+      }
+
+      function mostrarResultados() {
+        metricasFinal = calcularMetricas();
+        const m = metricasFinal;
+        const colorClasif = m.clasificacion === "Normal" ? "verde" : m.clasificacion === "Limítrofe" ? "amarillo" : "rojo";
+
+        document.getElementById("resultados-resumen").innerHTML = `
+          <p><strong>Nivel:</strong> ${m.nivel}</p>
+          <p><strong>Estímulos evaluados:</strong> ${m.estimulos_evaluados}</p>
+          <p><strong>Respuestas correctas:</strong> ${m.respuestas_correctas}</p>
+          <p><strong>Errores de omisión:</strong> ${m.errores_omision}</p>
+          <p><strong>Errores de comisión:</strong> ${m.errores_comision}</p>
+          <p><strong>Precisión:</strong> ${m.precision_porcentaje}%</p>
+          <p><strong>Clasificación:</strong> <span class="color-${colorClasif}">${m.clasificacion}</span> (${m.rango_esperado_precision})</p>
+          <p><strong>Tiempo de reacción promedio:</strong> ${m.tiempo_reaccion_promedio_ms ?? "-"} ms</p>
+          ${
+            m.efecto_interferencia_ms !== null
+              ? `<p><strong>Efecto de interferencia:</strong> ${m.efecto_interferencia_ms} ms (incongruente − congruente)</p>`
+              : ""
+          }
+        `;
+        mostrarPantalla("screen-resultados");
+      }
+
+      document.getElementById("btn-guardar").addEventListener("click", async () => {
+        const comentario = document.getElementById("comentario-clinico").value.trim();
+        const detalle = respuestas.map((r) => ({
+          numero_estimulo: r.numero,
+          estimulo: `palabra: ${r.palabra}, tinta: ${r.tinta}`,
+          respuesta: r.elegido,
+          correcto: r.correcto,
+          tipo_error: r.correcto ? null : r.elegido === null ? "omision" : "comision",
+          rt_ms: r.rt,
+        }));
+
+        const respuesta = await fetch("/api/resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paciente_id: paciente.id,
+            test_slug: "stroop",
+            parametros: { nivel: nivelElegido, cantidad_estimulos: cantidadElegida },
+            metricas: metricasFinal,
+            detalle: detalle,
+            comentarios_medico: comentario || null,
+          }),
+        });
+        const datos = await respuesta.json();
+        const mensaje = document.getElementById("guardado-msg");
+
+        if (respuesta.ok) {
+          mensaje.className = "info-box";
+          mensaje.textContent = "Resultado guardado correctamente.";
+          mensaje.hidden = false;
+          document.getElementById("acciones-resultado").hidden = true;
+          document.getElementById("acciones-post-guardado").hidden = false;
+        } else {
+          mensaje.className = "error-box";
+          mensaje.textContent = `No se pudo guardar: ${datos.detail}`;
+          mensaje.hidden = false;
+        }
+      });
+
+      document.getElementById("btn-descartar").addEventListener("click", () => {
+        const mensaje = document.getElementById("guardado-msg");
+        mensaje.className = "info-box";
+        mensaje.textContent = "Resultado descartado.";
+        mensaje.hidden = false;
+        document.getElementById("acciones-resultado").hidden = true;
+        document.getElementById("acciones-post-guardado").hidden = false;
+      });
+
+      document.getElementById("btn-otro-intento").addEventListener("click", () => {
+        nivelElegido = null;
+        document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+        document.getElementById("config-error").hidden = true;
+        document.getElementById("cantidad-custom").value = 20;
+
+        document.getElementById("acciones-resultado").hidden = false;
+        document.getElementById("acciones-post-guardado").hidden = true;
+        document.getElementById("guardado-msg").hidden = true;
+        document.getElementById("comentario-clinico").value = "";
+
+        mostrarPantalla("screen-config");
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detalle de paciente — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content" id="detalle-paciente">
+    <p>Cargando...</p>
+  </main>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const pacienteActivo = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${pacienteActivo ? `Paciente: ${pacienteActivo.nombre} ${pacienteActivo.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página ---
+      const container = document.getElementById("detalle-paciente");
+      const id = new URLSearchParams(window.location.search).get("id");
+
+      async function cargarPaciente() {
+        if (!id) {
+          container.innerHTML = `<p class="error-box">No se especificó un paciente.</p>`;
+          return;
+        }
+
+        const respuesta = await fetch(`/api/pacientes/${id}`);
+        const paciente = await respuesta.json();
+
+        if (!respuesta.ok) {
+          container.innerHTML = `<p class="error-box">${paciente.detail}</p>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <a href="/pages/pacientes.html" class="back-link">← Volver a pacientes</a>
+          <h1>${paciente.nombre} ${paciente.apellido}</h1>
+          <p><strong>ID:</strong> ${paciente.id}</p>
+          <p><strong>Fecha de nacimiento:</strong> ${paciente.fecha_nacimiento || "No especificada"}</p>
+          <p><strong>Comentarios:</strong> ${paciente.comentarios || "Sin comentarios"}</p>
+          <div class="form-inline">
+            <button id="usar-paciente" class="btn-primary" type="button">Usar este paciente</button>
+            <a href="/pages/historial.html?paciente_id=${paciente.id}" class="btn-primary">Ver historial de este paciente</a>
+          </div>
+        `;
+
+        document.getElementById("usar-paciente").addEventListener("click", () => {
+          sessionStorage.setItem("paciente", JSON.stringify(paciente));
+          location.reload();
+        });
+      }
+
+      cargarPaciente();
+    }
+  </script>
+</body>
+</html>
