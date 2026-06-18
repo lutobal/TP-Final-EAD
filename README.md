@@ -14,10 +14,20 @@ durante la instalación).
 Después, abrí una terminal en la carpeta del proyecto y ejecutá estos pasos
 **una sola vez**:
 
+**Windows:**
+
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+**Mac / Linux:**
+
+```bash
+cd backend
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
 ```
 
 Esto crea una carpeta `backend/.venv` con una copia aislada de Python y le
@@ -28,9 +38,18 @@ computadora).
 
 Desde la carpeta del proyecto:
 
+**Windows:**
+
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m uvicorn server:app --reload
+```
+
+**Mac / Linux:**
+
+```bash
+cd backend
+./.venv/bin/python -m uvicorn server:app --reload
 ```
 
 Vas a ver un mensaje como `Uvicorn running on http://127.0.0.1:8000`. Dejá
