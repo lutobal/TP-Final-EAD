@@ -796,6 +796,26 @@ def eliminar_historial_paciente(paciente_id: int):
     conexion.close()
 
 
+@app.delete("/api/pacientes/{paciente_id}", status_code=204)
+def eliminar_paciente(paciente_id: int):
+    conexion = conectar_db()
+    existente = conexion.execute("SELECT id FROM pacientes WHERE id = ?", (paciente_id,)).fetchone()
+    if existente is None:
+        conexion.close()
+        raise HTTPException(404, "Paciente no encontrado.")
+
+    # Borra primero el historial de tests del paciente (detalle y resultados)
+    # y recién después al paciente, para no dejar filas huérfanas.
+    conexion.execute(
+        "DELETE FROM resultados_detalle WHERE resultado_id IN (SELECT id FROM resultados WHERE paciente_id = ?)",
+        (paciente_id,),
+    )
+    conexion.execute("DELETE FROM resultados WHERE paciente_id = ?", (paciente_id,))
+    conexion.execute("DELETE FROM pacientes WHERE id = ?", (paciente_id,))
+    conexion.commit()
+    conexion.close()
+
+
 # Esto va al final a propósito: cualquier dirección que no sea /api/algo se
 # busca como archivo dentro de frontend/ (así se sirven las páginas web).
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

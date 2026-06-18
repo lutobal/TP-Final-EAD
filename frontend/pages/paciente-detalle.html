@@ -89,12 +89,29 @@
           <div class="form-inline">
             <button id="usar-paciente" class="btn-primary" type="button">Usar este paciente</button>
             <a href="/pages/historial.html?paciente_id=${paciente.id}" class="btn-primary">Ver historial de este paciente</a>
+            <button id="eliminar-paciente" class="btn-primary" type="button">Eliminar paciente</button>
           </div>
         `;
 
         document.getElementById("usar-paciente").addEventListener("click", () => {
           sessionStorage.setItem("paciente", JSON.stringify(paciente));
           location.reload();
+        });
+
+        document.getElementById("eliminar-paciente").addEventListener("click", async () => {
+          if (
+            !confirm(
+              `¿Eliminar a ${paciente.nombre} ${paciente.apellido}? Esto borra también TODO su historial de tests. Esta acción no se puede deshacer.`
+            )
+          )
+            return;
+
+          await fetch(`/api/pacientes/${paciente.id}`, { method: "DELETE" });
+
+          if (pacienteActivo && String(pacienteActivo.id) === String(paciente.id)) {
+            sessionStorage.removeItem("paciente");
+          }
+          window.location.href = "/pages/pacientes.html";
         });
       }
 
