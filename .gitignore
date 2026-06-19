@@ -7,7 +7,7 @@ __pycache__/
 # Base de datos local: son datos de prueba, no código
 backend/data/*.db
 
-# Proyecto de PlatformIO aparte (firmware ESP32 en exploracion, no es parte
-# de esta entrega todavia - ver charla sobre si esto va en otro repo)
-/TP Final/
-/platformio.ini
+# Firmware (PlatformIO): cache de compilacion y config local del editor,
+# se regeneran solos al abrir firmware/ como proyecto de PlatformIO
+firmware/.pio/
+firmware/.vscode/

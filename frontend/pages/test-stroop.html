@@ -484,6 +484,28 @@
         }
       });
 
+      // --- Control físico (ESP32) por WebSocket: mismo handler que el mouse/teclado ---
+      const mapaBotonesFisicos = {
+        BOTON_ROJO: "rojo",
+        BOTON_VERDE: "verde",
+        BOTON_AZUL: "azul",
+        BOTON_AMARILLO: "amarillo",
+      };
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (document.getElementById("screen-test").hidden || pausado) return;
+          if (document.getElementById("stroop-card").hidden) return;
+          const color = mapaBotonesFisicos[event.data];
+          if (color) {
+            registrarRespuesta(color);
+          }
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, el test sigue
+        // funcionando igual con mouse/teclado.
+      }
+
       // --- Pausa: tres opciones, igual al patrón reutilizado del prototipo ---
       document.getElementById("btn-pausa").addEventListener("click", () => {
         if (pausado) return;

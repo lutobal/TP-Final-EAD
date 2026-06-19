@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>N-Back de Colores — NeuroRehab Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-brand">NeuroRehab Platform</span>
+    <span class="topbar-info" id="topbar-info"></span>
+    <div class="topbar-actions">
+      <a href="/pages/home.html" class="home-button" aria-label="Ir al inicio" title="Inicio">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+      </a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+    </div>
+  </div>
+  <nav class="hamburger-menu" id="hamburger-menu" hidden>
+    <ul>
+      <li><a href="/pages/home.html">Inicio</a></li>
+      <li><a href="/pages/historial.html">Historial</a></li>
+      <li><a href="/pages/pacientes.html">Pacientes</a></li>
+      <li><a href="/pages/estado-dispositivo.html">Estado del dispositivo</a></li>
+      <li><button id="cerrar-paciente" class="link-button" type="button">Cerrar paciente</button></li>
+      <li><button id="cerrar-sesion" class="link-button" type="button">Cerrar sesión</button></li>
+    </ul>
+  </nav>
+
+  <main class="page-content">
+    <!-- Pantalla 1: se muestra solo si no hay paciente activo -->
+    <section id="screen-gate" hidden>
+      <h1>Antes de empezar</h1>
+      <p class="page-subtitle">Para realizar este test hace falta un paciente activo.</p>
+      <div class="form-inline">
+        <a class="btn-primary" href="/pages/pacientes.html?volver=nback">Seleccionar paciente existente</a>
+        <a class="btn-primary" href="/pages/pacientes.html?volver=nback&crear=1">Crear paciente nuevo</a>
+        <a class="btn-primary" href="/pages/test-detail.html?slug=nback">Cancelar</a>
+      </div>
+    </section>
+
+    <!-- Pantalla 2: configuración (nivel + cantidad de intentos) -->
+    <section id="screen-config" hidden>
+      <h1>Configuración del test</h1>
+
+      <h2>Nivel de dificultad</h2>
+      <div class="level-options">
+        <button class="level-option" data-nivel="facil" type="button">
+          <strong>Fácil</strong>
+          <span>Se prende un solo LED. El paciente repite ese color.</span>
+        </button>
+        <button class="level-option" data-nivel="medio" type="button">
+          <strong>Medio</strong>
+          <span>Se prenden 2 LEDs en secuencia. El paciente repite el patrón completo, en orden.</span>
+        </button>
+        <button class="level-option" data-nivel="dificil" type="button">
+          <strong>Difícil</strong>
+          <span>Elegís de antemano cuántos LEDs se muestran (hasta 6).</span>
+        </button>
+      </div>
+
+      <div id="config-dificil-extra" hidden>
+        <h2>Cantidad de colores por secuencia (nivel difícil)</h2>
+        <div class="form-inline">
+          <label for="estimulos-dificil">Cantidad (1 a 6):</label>
+          <input id="estimulos-dificil" type="number" min="1" max="6" step="1" value="4" />
+        </div>
+      </div>
+
+      <h2>Cantidad de intentos</h2>
+      <div class="form-inline">
+        <label for="cantidad-custom">Cantidad (3 a 30):</label>
+        <input id="cantidad-custom" type="number" min="3" max="30" step="1" value="10" />
+      </div>
+
+      <p id="config-error" class="error-box" hidden>Tenés que elegir un nivel de dificultad antes de continuar.</p>
+      <button id="config-continuar" class="btn-primary" type="button">Iniciar</button>
+    </section>
+
+    <!-- Pantalla 3: instrucciones tipo carrusel -->
+    <section id="screen-instrucciones" hidden>
+      <div class="carousel-header">
+        <a href="/pages/test-detail.html?slug=nback" class="back-link">Salir</a>
+        <span id="carousel-titulo"></span>
+      </div>
+      <div id="carousel-contenido"></div>
+      <div id="carousel-visual" class="carousel-visual"></div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="carousel-nav">
+        <button id="carousel-anterior" class="btn-primary" type="button">← Anterior</button>
+        <button id="carousel-saltear" class="btn-primary" type="button">Saltear</button>
+        <button id="carousel-siguiente" class="btn-primary" type="button">Siguiente →</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 4: el test en sí -->
+    <section id="screen-test" hidden>
+      <div class="nback-header">
+        <div class="nback-progreso" id="nback-progreso"></div>
+        <button id="btn-pausa" class="pause-button" type="button" aria-label="Pausar" title="Pausar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="nback-fase-mensaje" id="nback-fase-mensaje"></p>
+
+      <div class="nback-led-area">
+        <div class="nback-led-circulo" id="nback-led-circulo"></div>
+      </div>
+
+      <div class="color-buttons nback-respuestas-historial" id="nback-respuestas-historial"></div>
+    </section>
+
+    <!-- Pantalla 5: resultados -->
+    <section id="screen-resultados" hidden>
+      <h1>Resultados</h1>
+      <div id="resultados-resumen"></div>
+
+      <label for="comentario-clinico">Comentario clínico (opcional)</label>
+      <textarea id="comentario-clinico" class="form" style="width: 100%; max-width: 480px;"></textarea>
+
+      <div class="form-inline" id="acciones-resultado">
+        <button id="btn-guardar" class="btn-primary" type="button">Guardar resultado</button>
+        <button id="btn-descartar" class="btn-primary" type="button">Descartar resultado</button>
+      </div>
+      <p id="guardado-msg" class="info-box" hidden></p>
+      <div class="form-inline" id="acciones-post-guardado" hidden>
+        <a href="/pages/home.html" class="btn-primary">Volver al inicio</a>
+        <button id="btn-otro-intento" class="btn-primary" type="button">Realizar otro intento</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Overlay de pausa: tres opciones, igual al patrón del resto de los tests -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-overlay-box">
+      <h2>Test en pausa</h2>
+      <button id="pausa-reanudar" class="btn-primary" type="button">Reanudar</button>
+      <button id="pausa-reiniciar" class="btn-primary" type="button">Reiniciar</button>
+      <button id="pausa-menu" class="btn-primary" type="button">Volver al menú</button>
+    </div>
+  </div>
+
+  <script>
+    const medicoGuardado = sessionStorage.getItem("medico");
+
+    if (!medicoGuardado) {
+      window.location.href = "/index.html";
+    } else {
+      const medico = JSON.parse(medicoGuardado);
+      const pacienteGuardado = sessionStorage.getItem("paciente");
+      const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
+
+      document.getElementById("topbar-info").textContent =
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+
+      document.getElementById("menu-toggle").addEventListener("click", () => {
+        const menu = document.getElementById("hamburger-menu");
+        menu.hidden = !menu.hidden;
+      });
+
+      document.getElementById("cerrar-sesion").addEventListener("click", () => {
+        sessionStorage.removeItem("medico");
+        window.location.href = "/index.html";
+      });
+
+      document.getElementById("cerrar-paciente").addEventListener("click", () => {
+        sessionStorage.removeItem("paciente");
+        location.reload();
+      });
+
+      // --- Lo que es propio de esta página: el test N-Back completo ---
+
+      function mostrarPantalla(idVisible) {
+        ["screen-gate", "screen-config", "screen-instrucciones", "screen-test", "screen-resultados"].forEach(
+          (id) => {
+            document.getElementById(id).hidden = id !== idVisible;
+          }
+        );
+      }
+
+      // ===== Configuración: nivel + cantidad de estímulos por secuencia + cantidad de intentos =====
+      let nivelElegido = null;
+      let cantidadElegida = 10;
+      let estimulosPorSecuenciaDificil = 4;
+
+      document.querySelectorAll(".level-option").forEach((boton) => {
+        boton.addEventListener("click", () => {
+          nivelElegido = boton.dataset.nivel;
+          document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+          boton.classList.add("selected");
+          document.getElementById("config-error").hidden = true;
+          document.getElementById("config-dificil-extra").hidden = nivelElegido !== "dificil";
+        });
+      });
+
+      document.getElementById("config-continuar").addEventListener("click", () => {
+        if (!nivelElegido) {
+          document.getElementById("config-error").hidden = false;
+          return;
+        }
+
+        let cantidad = parseInt(document.getElementById("cantidad-custom").value, 10);
+        if (isNaN(cantidad)) cantidad = 10;
+        cantidad = Math.min(30, Math.max(3, cantidad));
+        cantidadElegida = cantidad;
+
+        if (nivelElegido === "dificil") {
+          let estimulos = parseInt(document.getElementById("estimulos-dificil").value, 10);
+          if (isNaN(estimulos)) estimulos = 4;
+          estimulos = Math.min(6, Math.max(1, estimulos));
+          estimulosPorSecuenciaDificil = estimulos;
+        }
+
+        iniciarTest();
+      });
+
+      // ===== Instrucciones (carrusel) =====
+      const SLIDES = [
+        {
+          titulo: "N-Back de Colores",
+          lineas: [
+            "Vas a memorizar uno o más colores que se muestran con los LEDs de tu control.",
+            "Los colores posibles son: rojo, verde, azul y amarillo.",
+          ],
+        },
+        {
+          titulo: "Nivel Fácil",
+          lineas: [
+            "Se prende un solo LED con un color. Se apaga.",
+            "Tenés que apretar el botón de ese color.",
+          ],
+        },
+        {
+          titulo: "Nivel Medio",
+          lineas: [
+            "Se prenden 2 LEDs, uno después del otro.",
+            "Cuando se apagan los dos, repetí el patrón completo, en el mismo orden.",
+          ],
+        },
+        {
+          titulo: "Nivel Difícil",
+          lineas: [
+            "El médico elige de antemano cuántos colores se van a mostrar (hasta 6).",
+            "Cuantos más colores, más difícil memorizar el patrón completo.",
+          ],
+        },
+        {
+          titulo: "Cómo responder",
+          lineas: [
+            "Cuando termine la secuencia de LEDs, presioná los botones de colores del control en el mismo orden.",
+            "Cada vez que se registre que apretaste un botón, va a aparecer un cartel grande con ese color en pantalla, en el orden en que los apretaste.",
+          ],
+        },
+        {
+          titulo: "El botón de pausa",
+          lineas: [
+            "En cualquier momento podés pausar el test con el botón de pausa del control.",
+            "Al pausar aparecen tres opciones: Reanudar, Reiniciar o Volver al menú.",
+          ],
+        },
+        {
+          titulo: "¡Todo listo!",
+          lineas: [
+            "Elegí el nivel y la cantidad de intentos.",
+            "Cuando estés listo, presioná Iniciar.",
+          ],
+        },
+      ];
+      let slideActual = 0;
+
+      function dibujarVisual(i) {
+        if (i === 0) {
+          return `
+            <div class="nback-demo-paleta">
+              <div class="nback-demo-circulo-chico bg-rojo"></div>
+              <div class="nback-demo-circulo-chico bg-verde"></div>
+              <div class="nback-demo-circulo-chico bg-azul"></div>
+              <div class="nback-demo-circulo-chico bg-amarillo"></div>
+            </div>
+            <p class="stroop-example-label">Los 4 colores posibles</p>
+          `;
+        }
+        if (i === 1) {
+          return `
+            <div class="nback-demo-fila">
+              <div class="nback-demo-circulo-chico bg-rojo" style="width:64px;height:64px;"></div>
+            </div>
+            <div class="stroop-example-arrow">↓</div>
+            <div class="mini-color-buttons">
+              <span class="mini-color-button bg-rojo correcto">Rojo ✓</span>
+            </div>
+          `;
+        }
+        if (i === 2) {
+          return `
+            <div class="nback-demo-fila">
+              <div>
+                <div class="nback-demo-circulo-chico bg-verde" style="width:50px;height:50px;"></div>
+                <p class="nback-demo-numero">1°</p>
+              </div>
+              <div>
+                <div class="nback-demo-circulo-chico bg-azul" style="width:50px;height:50px;"></div>
+                <p class="nback-demo-numero">2°</p>
+              </div>
+            </div>
+            <div class="stroop-example-arrow">↓</div>
+            <div class="mini-color-buttons">
+              <span class="mini-color-button bg-verde correcto">1° Verde ✓</span>
+              <span class="mini-color-button bg-azul correcto">2° Azul ✓</span>
+            </div>
+          `;
+        }
+        if (i === 3) {
+          return `
+            <div class="nback-demo-fila">
+              ${[1, 2, 3, 4, 5, 6]
+                .map(
+                  (n) => `
+                <div>
+                  <div class="nback-demo-circulo-chico" style="width:30px;height:30px;background:var(--color-text-muted);"></div>
+                  <p class="nback-demo-numero">${n}°</p>
+                </div>
+              `
+                )
+                .join("")}
+            </div>
+            <p class="stroop-example-label">Vos elegís cuántos (entre 1 y 6) antes de empezar</p>
+          `;
+        }
+        if (i === 4) {
+          return `
+            <p class="stroop-example-label">Apretaste rojo y después verde:</p>
+            <div class="color-buttons-preview">
+              <span class="color-button rojo">Rojo<span class="key-hint">1°</span></span>
+              <span class="color-button verde">Verde<span class="key-hint">2°</span></span>
+            </div>
+          `;
+        }
+        if (i === 5) {
+          return `
+            <div class="pause-example">
+              <div class="pause-example-icon">II</div>
+              <div class="pause-example-options">
+                <span class="pause-example-option bg-verde">Reanudar</span>
+                <span class="pause-example-option bg-rojo">Reiniciar</span>
+                <span class="pause-example-option bg-amarillo">Volver al menú</span>
+              </div>
+            </div>
+          `;
+        }
+        return `<div class="success-check">✓</div>`;
+      }
+
+      function mostrarSlide(i) {
+        slideActual = i;
+        const slide = SLIDES[i];
+        document.getElementById("carousel-titulo").textContent = `Paso ${i + 1} de ${SLIDES.length}`;
+        document.getElementById("carousel-contenido").innerHTML = `
+          <h2 class="carousel-slide-titulo">${slide.titulo}</h2>
+          <div class="carousel-slide-lineas">${slide.lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        `;
+        document.getElementById("carousel-visual").innerHTML = dibujarVisual(i);
+        document.getElementById("carousel-dots").innerHTML = SLIDES.map(
+          (_, idx) => `<span class="carousel-dot${idx === i ? " activo" : ""}"></span>`
+        ).join("");
+
+        document.getElementById("carousel-anterior").disabled = i === 0;
+        const esUltimo = i === SLIDES.length - 1;
+        document.getElementById("carousel-saltear").hidden = esUltimo;
+        document.getElementById("carousel-siguiente").textContent = esUltimo ? "Continuar" : "Siguiente →";
+      }
+
+      document.getElementById("carousel-anterior").addEventListener("click", () => {
+        if (slideActual > 0) mostrarSlide(slideActual - 1);
+      });
+      document.getElementById("carousel-saltear").addEventListener("click", () => {
+        mostrarSlide(SLIDES.length - 1);
+      });
+      document.getElementById("carousel-siguiente").addEventListener("click", () => {
+        if (slideActual < SLIDES.length - 1) {
+          mostrarSlide(slideActual + 1);
+        } else {
+          mostrarPantalla("screen-config");
+        }
+      });
+
+      // ===== Pantalla inicial: gate de paciente o instrucciones =====
+      if (!paciente) {
+        mostrarPantalla("screen-gate");
+      } else {
+        mostrarPantalla("screen-instrucciones");
+        mostrarSlide(0);
+      }
+
+      // ===== El test en sí =====
+      const COLORES = ["rojo", "verde", "azul", "amarillo"];
+      const COMANDO_LED = {
+        rojo: "LED_ROJO",
+        verde: "LED_VERDE",
+        azul: "LED_AZUL",
+        amarillo: "LED_AMARILLO",
+      };
+      const ESTIMULO_ON_MS = 900;
+      const ESTIMULO_OFF_MS = 500;
+      const TIEMPO_RESPUESTA_MS = 5000;
+      const PAUSA_ENTRE_INTENTOS_MS = 1800;
+
+      let N = 1;
+      let intentoActual = 0;
+      let secuenciaActual = [];
+      let posicionRespuesta = 0;
+      let detalleGlobal = [];
+      let resultadosPorIntento = [];
+      let faseActual = "mostrando"; // "mostrando" | "esperando_respuesta"
+      let pausado = false;
+      let resolverReanudar = null;
+      let tInicioRespuesta = null;
+      let tiempoRestanteMs = TIEMPO_RESPUESTA_MS;
+      let timeoutId = null;
+
+      async function mandarComandoLED(comando) {
+        try {
+          await fetch("/api/dispositivo/comando", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comando }),
+          });
+        } catch {
+          // Si el ESP32 no está conectado, el test sigue funcionando igual
+          // con el círculo en pantalla como estímulo.
+        }
+      }
+
+      function mostrarLedPantalla(color, encendido) {
+        const circulo = document.getElementById("nback-led-circulo");
+        circulo.className = "nback-led-circulo" + (encendido ? ` encendido ${color}` : "");
+      }
+
+      function pausarSiCorresponde() {
+        if (!pausado) return Promise.resolve();
+        return new Promise((resolve) => {
+          resolverReanudar = resolve;
+        });
+      }
+
+      function esperar(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function generarSecuencia(n) {
+        const secuencia = [];
+        for (let i = 0; i < n; i++) {
+          secuencia.push(COLORES[Math.floor(Math.random() * COLORES.length)]);
+        }
+        return secuencia;
+      }
+
+      function actualizarProgreso() {
+        document.getElementById("nback-progreso").textContent =
+          `Intento ${Math.min(intentoActual + 1, cantidadElegida)} / ${cantidadElegida} · ${N} color${N > 1 ? "es" : ""} por secuencia`;
+      }
+
+      function actualizarMensajeFase(texto) {
+        document.getElementById("nback-fase-mensaje").textContent = texto;
+      }
+
+      async function mostrarSecuencia(secuencia) {
+        faseActual = "mostrando";
+        actualizarMensajeFase("Mirá los LEDs de tu control y memorizá el patrón...");
+        document.getElementById("nback-respuestas-historial").innerHTML = "";
+
+        for (let i = 0; i < secuencia.length; i++) {
+          await pausarSiCorresponde();
+          const color = secuencia[i];
+          mostrarLedPantalla(color, true);
+          await mandarComandoLED(COMANDO_LED[color]);
+          await esperar(ESTIMULO_ON_MS);
+
+          await pausarSiCorresponde();
+          mostrarLedPantalla(color, false);
+          await mandarComandoLED("LED_OFF");
+          await esperar(ESTIMULO_OFF_MS);
+        }
+
+        await pausarSiCorresponde();
+        iniciarFaseRespuesta();
+      }
+
+      function agregarCardRespuesta(colorElegido, posicion) {
+        const contenedor = document.getElementById("nback-respuestas-historial");
+        const card = document.createElement("div");
+        const etiqueta = colorElegido
+          ? colorElegido.charAt(0).toUpperCase() + colorElegido.slice(1)
+          : "Sin respuesta";
+        card.className = `color-button ${colorElegido || "vacio"}`;
+        card.innerHTML = `${etiqueta}<span class="key-hint">${posicion}°</span>`;
+        contenedor.appendChild(card);
+      }
+
+      function iniciarFaseRespuesta() {
+        faseActual = "esperando_respuesta";
+        posicionRespuesta = 0;
+        actualizarMensajeFase("Tu turno: repetí la secuencia con los botones de tu control.");
+        tInicioRespuesta = Date.now();
+        tiempoRestanteMs = TIEMPO_RESPUESTA_MS;
+        timeoutId = setTimeout(() => registrarRespuesta(null), tiempoRestanteMs);
+      }
+
+      function registrarRespuesta(colorElegido) {
+        if (faseActual !== "esperando_respuesta" || pausado) return;
+        clearTimeout(timeoutId);
+
+        const esperado = secuenciaActual[posicionRespuesta];
+        const correcto = colorElegido === esperado;
+        const rt = colorElegido !== null ? Date.now() - tInicioRespuesta : null;
+
+        detalleGlobal.push({
+          numero: detalleGlobal.length + 1,
+          intento: intentoActual + 1,
+          posicion: posicionRespuesta + 1,
+          estimulo: esperado,
+          respuesta: colorElegido,
+          correcto,
+          rt,
+        });
+
+        agregarCardRespuesta(colorElegido, posicionRespuesta + 1);
+
+        posicionRespuesta += 1;
+
+        if (posicionRespuesta >= N) {
+          finalizarIntento();
+        } else {
+          tInicioRespuesta = Date.now();
+          tiempoRestanteMs = TIEMPO_RESPUESTA_MS;
+          timeoutId = setTimeout(() => registrarRespuesta(null), tiempoRestanteMs);
+        }
+      }
+
+      function finalizarIntento() {
+        const detalleIntento = detalleGlobal.filter((d) => d.intento === intentoActual + 1);
+        resultadosPorIntento.push(detalleIntento.every((d) => d.correcto));
+
+        intentoActual += 1;
+        // Pausa antes de seguir, para dar tiempo a ver en pantalla la última
+        // tarjeta de respuesta antes de que se borre con el próximo patrón
+        // (o se pase a resultados).
+        actualizarMensajeFase("¡Bien! Preparando el siguiente patrón...");
+        if (intentoActual >= cantidadElegida) {
+          setTimeout(() => mostrarResultados(), PAUSA_ENTRE_INTENTOS_MS);
+        } else {
+          setTimeout(() => iniciarIntento(), PAUSA_ENTRE_INTENTOS_MS);
+        }
+      }
+
+      function iniciarIntento() {
+        secuenciaActual = generarSecuencia(N);
+        actualizarProgreso();
+        mostrarSecuencia(secuenciaActual);
+      }
+
+      function iniciarTest() {
+        N = nivelElegido === "facil" ? 1 : nivelElegido === "medio" ? 2 : estimulosPorSecuenciaDificil;
+        intentoActual = 0;
+        detalleGlobal = [];
+        resultadosPorIntento = [];
+        pausado = false;
+        mandarComandoLED("LED_OFF");
+        mostrarPantalla("screen-test");
+        iniciarIntento();
+      }
+
+      // --- Este test SOLO acepta respuestas del control físico (ESP32) por
+      // WebSocket: a diferencia de los otros tests, acá no hay click ni
+      // teclado como entrada alternativa, porque lo que se está evaluando
+      // es justamente la confiabilidad de los botones físicos. ---
+      const mapaBotonesFisicos = {
+        BOTON_ROJO: "rojo",
+        BOTON_VERDE: "verde",
+        BOTON_AZUL: "azul",
+        BOTON_AMARILLO: "amarillo",
+      };
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (document.getElementById("screen-test").hidden) return;
+          const color = mapaBotonesFisicos[event.data];
+          if (color) {
+            registrarRespuesta(color);
+          }
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, el test sigue
+        // funcionando igual con mouse/teclado.
+      }
+
+      // --- Pausa: tres opciones, igual al patrón del resto de los tests ---
+      document.getElementById("btn-pausa").addEventListener("click", () => {
+        if (pausado) return;
+        pausado = true;
+        if (faseActual === "esperando_respuesta") {
+          clearTimeout(timeoutId);
+          if (tInicioRespuesta) tiempoRestanteMs -= Date.now() - tInicioRespuesta;
+        }
+        document.getElementById("pause-overlay").hidden = false;
+      });
+
+      document.getElementById("pausa-reanudar").addEventListener("click", () => {
+        pausado = false;
+        document.getElementById("pause-overlay").hidden = true;
+        if (faseActual === "esperando_respuesta") {
+          tInicioRespuesta = Date.now();
+          timeoutId = setTimeout(() => registrarRespuesta(null), tiempoRestanteMs);
+        } else if (resolverReanudar) {
+          const resolver = resolverReanudar;
+          resolverReanudar = null;
+          resolver();
+        }
+      });
+
+      document.getElementById("pausa-reiniciar").addEventListener("click", () => {
+        clearTimeout(timeoutId);
+        resolverReanudar = null;
+        pausado = false;
+        document.getElementById("pause-overlay").hidden = true;
+        mandarComandoLED("LED_OFF");
+        iniciarTest();
+      });
+
+      document.getElementById("pausa-menu").addEventListener("click", () => {
+        clearTimeout(timeoutId);
+        mandarComandoLED("LED_OFF");
+        window.location.href = "/pages/test-detail.html?slug=nback";
+      });
+
+      // ===== Resultados =====
+      let metricasFinal = null;
+
+      const REFERENCIAS = {
+        facil: { precision: 91.1, rt: 697.1, etiqueta: "1-back" },
+        medio: { precision: 83.9, rt: 827.2, etiqueta: "2-back" },
+        dificil: { precision: 77.0, rt: 858.9, etiqueta: "3-back (referencia más exigente disponible)" },
+      };
+
+      function claseSeveridad(nivel) {
+        if (nivel === "Normal") return "color-verde";
+        if (nivel === "Leve") return "color-amarillo";
+        if (nivel === "Moderado") return "color-naranja";
+        return "color-rojo";
+      }
+
+      function calcularMetricas() {
+        const total = detalleGlobal.length;
+        const correctas = detalleGlobal.filter((d) => d.correcto).length;
+        const omisiones = detalleGlobal.filter((d) => d.respuesta === null).length;
+        const comisiones = detalleGlobal.filter((d) => !d.correcto && d.respuesta !== null).length;
+        const precision = Math.round((correctas / total) * 1000) / 10;
+
+        const rts = detalleGlobal.filter((d) => d.correcto && d.rt !== null).map((d) => d.rt);
+        const rtPromedio = rts.length ? Math.round(rts.reduce((a, b) => a + b, 0) / rts.length) : null;
+
+        const referencia = REFERENCIAS[nivelElegido];
+        const diferenciaPrecision = referencia.precision - precision;
+        let clasificacion;
+        if (diferenciaPrecision <= 5) clasificacion = "Normal";
+        else if (diferenciaPrecision <= 15) clasificacion = "Leve";
+        else if (diferenciaPrecision <= 30) clasificacion = "Moderado";
+        else clasificacion = "Severo";
+
+        return {
+          nivel: nivelElegido,
+          estimulos_por_secuencia: N,
+          intentos_evaluados: cantidadElegida,
+          intentos_completos_correctos: resultadosPorIntento.filter(Boolean).length,
+          posiciones_evaluadas: total,
+          respuestas_correctas: correctas,
+          errores_omision: omisiones,
+          errores_comision: comisiones,
+          precision_porcentaje: precision,
+          tiempo_reaccion_promedio_ms: rtPromedio,
+          referencia_bibliografica: referencia.etiqueta,
+          precision_referencia_pct: referencia.precision,
+          rt_referencia_ms: referencia.rt,
+          clasificacion: clasificacion,
+        };
+      }
+
+      function mostrarResultados() {
+        mandarComandoLED("LED_OFF");
+        metricasFinal = calcularMetricas();
+        const m = metricasFinal;
+
+        document.getElementById("resultados-resumen").innerHTML = `
+          <p><strong>Nivel:</strong> ${m.nivel} (${m.estimulos_por_secuencia} color${m.estimulos_por_secuencia > 1 ? "es" : ""} por secuencia)</p>
+          <p><strong>Intentos evaluados:</strong> ${m.intentos_evaluados} · <strong>Intentos 100% correctos:</strong> ${m.intentos_completos_correctos}</p>
+          <p><strong>Respuestas correctas:</strong> ${m.respuestas_correctas} / ${m.posiciones_evaluadas}</p>
+          <p><strong>Errores de omisión:</strong> ${m.errores_omision} · <strong>Errores de comisión:</strong> ${m.errores_comision}</p>
+          <p><strong>Precisión:</strong> ${m.precision_porcentaje}%</p>
+          <p><strong>Clasificación:</strong> <span class="${claseSeveridad(m.clasificacion)}">${m.clasificacion}</span>
+             (comparado con la referencia de ${m.referencia_bibliografica}: ${m.precision_referencia_pct}%)</p>
+          <p><strong>Tiempo de reacción promedio:</strong> ${m.tiempo_reaccion_promedio_ms ?? "-"} ms
+             (referencia: ${m.rt_referencia_ms} ms)</p>
+        `;
+        mostrarPantalla("screen-resultados");
+      }
+
+      document.getElementById("btn-guardar").addEventListener("click", async () => {
+        const comentario = document.getElementById("comentario-clinico").value.trim();
+        const detalle = detalleGlobal.map((d) => ({
+          numero_estimulo: d.numero,
+          estimulo: `intento ${d.intento}, posición ${d.posicion}: ${d.estimulo}`,
+          respuesta: d.respuesta,
+          correcto: d.correcto,
+          tipo_error: d.correcto ? null : d.respuesta === null ? "omision" : "comision",
+          rt_ms: d.rt,
+        }));
+
+        const respuesta = await fetch("/api/resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paciente_id: paciente.id,
+            test_slug: "nback",
+            parametros: {
+              nivel: nivelElegido,
+              cantidad_intentos: cantidadElegida,
+              estimulos_por_secuencia: N,
+            },
+            metricas: metricasFinal,
+            detalle: detalle,
+            comentarios_medico: comentario || null,
+          }),
+        });
+        const datos = await respuesta.json();
+        const mensaje = document.getElementById("guardado-msg");
+
+        if (respuesta.ok) {
+          mensaje.className = "info-box";
+          mensaje.textContent = "Resultado guardado correctamente.";
+          mensaje.hidden = false;
+          document.getElementById("acciones-resultado").hidden = true;
+          document.getElementById("acciones-post-guardado").hidden = false;
+        } else {
+          mensaje.className = "error-box";
+          mensaje.textContent = `No se pudo guardar: ${datos.detail}`;
+          mensaje.hidden = false;
+        }
+      });
+
+      document.getElementById("btn-descartar").addEventListener("click", () => {
+        const mensaje = document.getElementById("guardado-msg");
+        mensaje.className = "info-box";
+        mensaje.textContent = "Resultado descartado.";
+        mensaje.hidden = false;
+        document.getElementById("acciones-resultado").hidden = true;
+        document.getElementById("acciones-post-guardado").hidden = false;
+      });
+
+      document.getElementById("btn-otro-intento").addEventListener("click", () => {
+        nivelElegido = null;
+        document.querySelectorAll(".level-option").forEach((b) => b.classList.remove("selected"));
+        document.getElementById("config-error").hidden = true;
+        document.getElementById("config-dificil-extra").hidden = true;
+        document.getElementById("cantidad-custom").value = 10;
+        document.getElementById("estimulos-dificil").value = 4;
+
+        document.getElementById("acciones-resultado").hidden = false;
+        document.getElementById("acciones-post-guardado").hidden = true;
+        document.getElementById("guardado-msg").hidden = true;
+        document.getElementById("comentario-clinico").value = "";
+
+        mostrarPantalla("screen-config");
+      });
+    }
+  </script>
+</body>
+</html>

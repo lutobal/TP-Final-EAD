@@ -1,17 +1,19 @@
 # =============================================================================
 # Servidor de NeuroRehab Platform.
 #
-# Este es el UNICO archivo de backend. De arriba a abajo, hace 4 cosas:
+# Este es el UNICO archivo de backend. De arriba a abajo, hace 5 cosas:
 #   1. Conectarse a la base de datos SQLite (un solo archivo en disco) donde
 #      se guardan los médicos y los pacientes.
 #   2. Transformar contraseñas en un código (hash) para no guardarlas tal cual.
 #   3. Atender los pedidos que llegan del navegador: login, registro, lista
-#      de los 5 tests clínicos, y alta/búsqueda de pacientes.
+#      de los 5 tests clínicos, alta/búsqueda de pacientes, y el puente con
+#      el dispositivo ESP32 (UDP <-> WebSocket/HTTP, ver sección 3c más abajo).
 #   4. Servir los archivos de la carpeta frontend/ (las páginas web en sí).
 #
 # Se levanta con: uvicorn server:app --reload
 # =============================================================================
 
+import asyncio
 import hashlib
 import json
 import secrets
@@ -19,7 +21,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -282,18 +284,67 @@ TESTS = [
     },
     {
         "slug": "nback",
-        "nombre": "N-Back Espacial",
+        "nombre": "N-Back de Colores",
         "evalua": "Memoria de trabajo y atención sostenida.",
         "funcionamiento": (
-            "Se presentan secuencias de estímulos espaciales; el paciente debe "
-            "indicar con los botones si el estímulo actual coincide con uno "
-            "presentado N pasos atrás."
+            "Se le muestra al paciente una secuencia de uno o más colores con "
+            "los LEDs del control (uno por vez, con una pausa entre cada uno). "
+            "Cuando la secuencia termina, el paciente debe reproducirla "
+            "apretando los botones de colores en el mismo orden en que se "
+            "prendieron los LEDs. En el nivel fácil la secuencia es de un solo "
+            "color; en el medio, de dos; en el difícil, el médico elige de "
+            "antemano cuántos colores (hasta 6)."
         ),
-        "variables": ["Aciertos", "Errores", "Tiempo de reacción"],
-        "hardware": "Botones.",
+        "variables": [
+            "Precisión de las respuestas",
+            "Tiempo de reacción",
+            "Errores de omisión",
+            "Errores de comisión",
+        ],
+        "hardware": "4 LEDs de colores (estímulo) y 4 botones de colores (respuesta).",
+        "metricas_detalle": [
+            {
+                "nombre": "Precisión",
+                "que_mide": (
+                    "Qué porcentaje de los colores individuales de las secuencias "
+                    "fueron reproducidos correctamente, en la posición correcta."
+                ),
+                "como_se_calcula": (
+                    "Respuestas correctas dividido el total de estímulos evaluados "
+                    "(cantidad de intentos × colores por secuencia)."
+                ),
+                "interpretacion": [
+                    {"rango": "Hasta 5 puntos porcentuales por debajo de la referencia del nivel", "nivel": "Normal"},
+                    {"rango": "Entre 5 y 15 puntos por debajo", "nivel": "Leve"},
+                    {"rango": "Entre 15 y 30 puntos por debajo", "nivel": "Moderado"},
+                    {"rango": "Más de 30 puntos por debajo", "nivel": "Severo"},
+                ],
+            },
+            {
+                "nombre": "Tiempo de reacción",
+                "que_mide": "Cuánto tarda el paciente en presionar cada botón de respuesta, en promedio.",
+                "como_se_calcula": (
+                    "Promedio del tiempo entre que el paciente puede empezar a "
+                    "responder y el momento en que presiona cada botón, solo en "
+                    "las respuestas correctas."
+                ),
+                "interpretacion": [
+                    {
+                        "rango": "Se muestra junto al valor de referencia del nivel (697 ms en fácil, 827 ms en medio, 859 ms en difícil)",
+                        "nivel": "Informativo, sin clasificación propia",
+                    },
+                ],
+            },
+        ],
         "bibliografia_estado": (
-            "Rangos de precisión esperados por nivel, con clasificación "
-            "Normal/Limítrofe/Patológico."
+            "Valores de referencia de precisión y tiempo de reacción para 1-back "
+            "(91.1%, 697.1 ms), 2-back (83.9%, 827.2 ms) y 3-back (77.0%, 858.9 ms) "
+            "provistos por la cátedra. La fuente no incluye una tabla de severidad "
+            "Normal/Leve/Moderado/Severo: se deriva comparando la precisión del "
+            "paciente contra el valor de referencia del nivel jugado (fácil → "
+            "1-back, medio → 2-back, difícil → 3-back, incluso con más de 3 "
+            "colores por secuencia, ya que es la referencia más exigente "
+            "disponible)."
         ),
     },
     {
@@ -513,6 +564,65 @@ class ResultadoRequest(BaseModel):
 
 
 # -----------------------------------------------------------------------------
+# 3c. Puente con el dispositivo (ESP32): UDP <-> WebSocket/HTTP.
+#
+# Dirección ESP32 -> backend -> navegador (eventos, ej. botones):
+# el ESP32 manda eventos por UDP (ver firmware/src/main.cpp). Este bloque
+# escucha esos paquetes y los reenvía, tal cual llegan, a todos los
+# navegadores conectados por WebSocket a /ws/dispositivo. Así un test como
+# Stroop puede reaccionar a un botón físico exactamente igual que reacciona
+# a un click o una tecla (mismo handler, otra fuente de eventos).
+#
+# Dirección backend -> ESP32 (comandos, ej. prender un LED puntual):
+# no hay una IP del ESP32 configurada a mano en el backend. En cambio, cada
+# vez que llega un paquete UDP del ESP32 guardamos de qué dirección vino
+# (`direccion_esp32`); para mandarle un comando, el backend reusa ese mismo
+# socket UDP (el `transport`) y le contesta a esa dirección. El ESP32 avisa
+# su dirección apenas se conecta al WiFi (manda "ESP32_ONLINE"), así que no
+# hace falta esperar a que alguien apriete un botón físico primero.
+# -----------------------------------------------------------------------------
+
+PUERTO_UDP_DISPOSITIVO = 4210
+
+conexiones_websocket: list[WebSocket] = []
+
+transporte_udp_dispositivo: asyncio.DatagramTransport | None = None
+direccion_esp32: tuple[str, int] | None = None
+
+
+async def avisar_a_navegadores(mensaje: str) -> None:
+    for ws in list(conexiones_websocket):
+        try:
+            await ws.send_text(mensaje)
+        except Exception:
+            pass
+
+
+class _ProtocoloUDPDispositivo(asyncio.DatagramProtocol):
+    def connection_made(self, transport: asyncio.DatagramTransport) -> None:
+        global transporte_udp_dispositivo
+        transporte_udp_dispositivo = transport
+
+    def datagram_received(self, data: bytes, addr) -> None:
+        global direccion_esp32
+        direccion_esp32 = addr
+        mensaje = data.decode("utf-8", errors="replace")
+        asyncio.create_task(avisar_a_navegadores(mensaje))
+
+
+async def iniciar_escucha_udp() -> None:
+    loop = asyncio.get_event_loop()
+    await loop.create_datagram_endpoint(
+        _ProtocoloUDPDispositivo,
+        local_addr=("0.0.0.0", PUERTO_UDP_DISPOSITIVO),
+    )
+
+
+class ComandoDispositivoRequest(BaseModel):
+    comando: str
+
+
+# -----------------------------------------------------------------------------
 # 4. El servidor en sí: arranca, atiende pedidos, sirve el frontend.
 # -----------------------------------------------------------------------------
 
@@ -522,8 +632,39 @@ app = FastAPI(title="NeuroRehab Platform")
 
 
 @app.on_event("startup")
-def al_arrancar() -> None:
+async def al_arrancar() -> None:
     inicializar_db()
+    asyncio.create_task(iniciar_escucha_udp())
+
+
+@app.websocket("/ws/dispositivo")
+async def websocket_dispositivo(websocket: WebSocket) -> None:
+    await websocket.accept()
+    conexiones_websocket.append(websocket)
+    try:
+        while True:
+            # No esperamos nada del navegador; solo mantenemos la conexión
+            # abierta para poder mandarle avisos cuando llegue algo por UDP.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        conexiones_websocket.remove(websocket)
+
+
+@app.post("/api/dispositivo/comando")
+def enviar_comando_dispositivo(datos: ComandoDispositivoRequest):
+    if transporte_udp_dispositivo is None or direccion_esp32 is None:
+        raise HTTPException(
+            503,
+            "Todavía no se recibió ningún mensaje del ESP32: no se conoce su dirección en la red.",
+        )
+    transporte_udp_dispositivo.sendto(datos.comando.encode("utf-8"), direccion_esp32)
+    return {
+        "ok": True,
+        "comando": datos.comando,
+        "destino": f"{direccion_esp32[0]}:{direccion_esp32[1]}",
+    }
 
 
 @app.post("/api/auth/login")

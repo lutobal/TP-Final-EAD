@@ -13,9 +13,9 @@ cada archivo se entiende solo.
 
 ---
 
-## 1. Las dos mitades del proyecto
+## 1. Las tres partes del proyecto
 
-Todo el proyecto se divide en dos partes que viven en carpetas separadas:
+Todo el proyecto se divide en tres partes que viven en carpetas separadas:
 
 - **`backend/`** = el "cerebro" que corre en la computadora servidor. Guarda
   los datos (médicos, pacientes, y en el futuro resultados de tests), valida
@@ -24,12 +24,23 @@ Todo el proyecto se divide en dos partes que viven en carpetas separadas:
 - **`frontend/`** = lo que ves en la pantalla del navegador. Son los archivos
   que tu navegador (Chrome, Edge, etc.) descarga y dibuja: botones, textos,
   colores, formularios.
+- **`firmware/`** = el programa que corre directamente *adentro* del ESP32 (el
+  microcontrolador físico), no en la computadora ni en el navegador. Es el
+  que lee los botones, el joystick, el encoder y el acelerómetro, y prende
+  los LEDs y la pantalla OLED. Ver la sección 7 más abajo.
 
 Pensalo como un restaurante: el **frontend** es el salón y el menú que ve el
 cliente; el **backend** es la cocina, que recibe el pedido, lo prepara y lo
-manda de vuelta. La comunicación entre ambos se hace pidiendo cosas por
-internet (técnicamente, "peticiones HTTP" — pedidos con una dirección, como
-`/api/tests`, que el backend entiende y contesta).
+manda de vuelta; el **firmware** es como el brazo robótico que efectivamente
+toca los ingredientes físicos (los botones, sensores y luces del control). La
+comunicación entre frontend y backend se hace pidiendo cosas por internet
+(técnicamente, "peticiones HTTP" — pedidos con una dirección, como
+`/api/tests`, que el backend entiende y contesta); la comunicación entre el
+firmware y el backend ya existe **en los dos sentidos**: el ESP32 le avisa
+al backend cuando se aprieta un botón de color, y el backend se lo reenvía al
+navegador en vivo; y el backend también le puede mandar comandos al ESP32
+(por ejemplo, prender un LED puntual como estímulo de un test) — ver sección
+7.
 
 ---
 
@@ -42,7 +53,7 @@ pedidos por internet) y **Uvicorn** (lo que efectivamente lo pone en
 marcha — ver la pregunta "¿Qué es uvicorn?" más abajo si te la perdiste).
 
 ### `server.py`
-Todo el backend está en este único archivo, dividido en 4 bloques (están
+Todo el backend está en este único archivo, dividido en bloques (están
 marcados con comentarios `# ---` adentro del archivo, en este mismo orden):
 
 1. **Base de datos**: abre/crea el archivo `backend/data/neurorehab.db`
@@ -81,7 +92,24 @@ marcados con comentarios `# ---` adentro del archivo, en este mismo orden):
    - **Listar los resultados de un paciente**, **traer el detalle completo
      de un resultado puntual** (estímulo por estímulo), **borrar un
      resultado puntual**, o **borrar todo el historial de un paciente**.
-4. **El servidor en sí**: la parte que efectivamente prende todo y, al
+   - **Borrar un paciente entero**: borra también todo su historial (los
+     resultados y el detalle de cada uno), para no dejar filas huérfanas.
+4. **Puente con el dispositivo (ESP32)**, en los dos sentidos:
+   - **ESP32 → backend → navegador**: el backend escucha paquetes UDP
+     que manda el ESP32 (en el puerto 4210) y los reenvía tal cual a todos
+     los navegadores conectados por WebSocket a `/ws/dispositivo`. Así,
+     cuando el paciente aprieta un botón de color físico, el test en la
+     página web se entera al instante — Stroop ya usa esto, llamando a la
+     misma función que usan el click del mouse y el teclado
+     (`registrarRespuesta`), sin importarle de dónde vino el evento.
+   - **Backend → ESP32**: `POST /api/dispositivo/comando` (con
+     `{"comando": "LED_ROJO"}`, `"LED_OFF"`, etc.) le manda ese texto al
+     ESP32 por el mismo socket UDP. El backend no tiene la IP del ESP32
+     escrita a mano: la aprende sola de la dirección de quien le mandó el
+     último paquete (un botón apretado, o el aviso "ESP32_ONLINE" que el
+     ESP32 manda apenas se conecta al WiFi). Si todavía no llegó ningún
+     paquete del ESP32, este pedido contesta error 503.
+5. **El servidor en sí**: la parte que efectivamente prende todo y, al
    final del archivo, le dice al programa "todo lo que esté en la carpeta
    `frontend/` mostralo tal cual" (por eso cuando entrás a la página, ves
    el login).
@@ -125,12 +153,11 @@ La página de detalle de un test. Sirve para los 5 tests por igual: mira en
 la dirección web (URL) cuál test hay que mostrar (por ejemplo
 `?slug=stroop`), le pide al backend los datos de ese test puntual, y los
 muestra (qué evalúa, cómo funciona, variables, etc.). El botón "Realizar
-este test" lleva a la pantalla real del test si ya existe (por ahora, Stroop,
-Faro, Tracking y Laberinto); para N-Back, el único que falta, todavía
-muestra el cartel de "no implementado".
+este test" lleva a la pantalla real del test si ya existe — ahora los 5:
+Stroop, Faro, Tracking, Laberinto y N-Back.
 
-Si el test tiene el campo `metricas_detalle` (por ahora, Faro, Stroop,
-Tracking y Laberinto — se define en `server.py`, dentro de su entrada en
+Si el test tiene el campo `metricas_detalle` (los 5 tests ya lo tienen — se
+define en `server.py`, dentro de su entrada en
 `TESTS`), esta página agrega
 una sección extra "Métricas calculadas y cómo se interpretan" con un
 acordeón desplegable (`<details>`/`<summary>`, sin necesidad de JavaScript
@@ -163,16 +190,17 @@ separadas):
    Si tocás "Iniciar" sin haber elegido un nivel, aparece un aviso pidiendo
    que elijas uno — recién ahí arranca el test directamente.
 4. **El test**: aparece una palabra de color en una tinta de otro color;
-   hay que indicar el color de la *tinta*. Por ahora, mientras no existe el
-   dispositivo físico, se responde con las teclas 1/2/3/4 del teclado (cada
-   botón en pantalla muestra su número), además de poder clickear los
-   botones con el mouse. Cada respuesta llama a la misma función
-   (`registrarRespuesta`) sin importar de dónde vino — eso es lo que va a
-   permitir, más adelante, sumar los eventos del dispositivo real sin tocar
-   el resto de la lógica del test. Si no se responde en 5 segundos, se
-   cuenta como "omisión" y se pasa al siguiente estímulo. Arriba a la
-   derecha hay un botón circular con el ícono de pausa (dos barras
-   verticales, no texto) que abre las 3 opciones de siempre
+   hay que indicar el color de la *tinta*. Se puede responder de tres formas
+   a la vez: clickeando los botones en pantalla con el mouse, con las teclas
+   1/2/3/4 del teclado (cada botón en pantalla muestra su número), o con los
+   4 botones de colores físicos del control real (ya conectados por
+   WiFi/UDP — ver `docs/GUIA_DE_ARCHIVOS.md` sección 7). Las tres llaman a
+   la misma función (`registrarRespuesta`) sin importar de dónde vino la
+   respuesta — por eso sumar el control físico no tocó nada de la lógica del
+   test, solo agregó un escuchador de WebSocket más. Si no se responde en 5
+   segundos, se cuenta como "omisión" y se pasa al siguiente estímulo.
+   Arriba a la derecha hay un botón circular con el ícono de pausa (dos
+   barras verticales, no texto) que abre las 3 opciones de siempre
    (Reanudar/Reiniciar/Volver al menú).
 5. **Resultados**: precisión, clasificación (Normal/Limítrofe/Patológico),
    tiempo de reacción promedio, y efecto de interferencia (solo en nivel
@@ -336,6 +364,52 @@ e inclinalo", nunca "mouse" ni "clic".
    a tiempo, los resultados lo aclaran arriba de todo ("No completado")
    para que el resto de los números se lean en ese contexto.
 
+### `pages/test-nback.html`
+La pantalla real del test N-Back de Colores — el quinto y último de los 5
+tests, y el primero que usa el ESP32 también como **estímulo** (LEDs), no
+solo como entrada (botones). Mismo patrón de pantallas que los otros 4
+(gate de paciente → instrucciones → configuración → test → resultados).
+
+1. **Configuración**: nivel (fácil = 1 LED por secuencia, medio = 2 LEDs,
+   difícil = el médico elige de antemano entre 1 y 6) y cantidad de
+   intentos (3 a 30).
+2. **El test**: por cada intento, se prende un LED por vez (con una pausa
+   entre cada uno) y después se apaga, repitiendo eso para toda la
+   secuencia; cuando termina, el paciente tiene que reproducir el patrón
+   completo apretando los botones de colores en el mismo orden. Cada LED se
+   manda de verdad al ESP32 (`POST /api/dispositivo/comando`, ver sección
+   7) y además se muestra en un círculo grande en pantalla — ese círculo es
+   solo un respaldo visual (por si el ESP32 no está conectado, o para
+   probar sin hardware), las instrucciones del test nunca lo mencionan,
+   solo hablan del LED real. **A diferencia de los otros 4 tests, acá no
+   hay click ni teclado como entrada alternativa** — el `/ws/dispositivo`
+   (control físico) es la única forma de responder, a pedido explícito del
+   usuario, porque este test sirve también para evaluar la confiabilidad de
+   los botones físicos en sí, y el click/teclado como entrada alternativa
+   solo agregaba ruido a esa evaluación. Cada respuesta registrada agrega
+   un cartel grande (mismo tamaño y estilo que los botones de colores de
+   Stroop) con el color presionado y su número de orden ("1°", "2°", ...),
+   acumulándose de izquierda a derecha a medida que se aprietan los
+   botones — así se nota enseguida si algún botón se duplicó o no se
+   registró. Esos carteles se limpian al arrancar cada intento nuevo, y hay
+   una pausa de ~1.8s entre que termina un intento y arranca el siguiente
+   patrón de LEDs, para dar tiempo a ver el último cartel antes de que
+   desaparezca. Si el ESP32 no está conectado, mandar el comando del LED
+   simplemente falla en silencio (un 503 del backend) y el test sigue
+   funcionando igual con el círculo en pantalla.
+3. **Resultados**: precisión (sobre cada color individual de cada
+   secuencia, no solo sobre intentos completos), tiempo de reacción
+   promedio, y clasificación Normal/Leve/Moderado/Severo. A diferencia de
+   los otros 4 tests, el PDF de origen de este test no trae una tabla de
+   umbrales — solo da 3 valores de referencia (precisión y tiempo de
+   reacción esperados para 1-back, 2-back y 3-back). La clasificación se
+   deriva comparando la precisión del paciente contra el valor de
+   referencia del nivel jugado (fácil→1-back, medio→2-back, difícil→3-back,
+   incluso con más de 3 LEDs por secuencia, usando siempre el piso de
+   3-back). El tiempo de reacción se muestra junto a su referencia, pero no
+   tiene clasificación propia (mismo criterio que el efecto de
+   interferencia de Stroop).
+
 ### `pages/pacientes.html`
 Permite dos cosas: **buscar** pacientes ya creados (por nombre, apellido o
 ID, en cualquier combinación — al entrar a la página ya muestra todos) y
@@ -352,10 +426,12 @@ devuelve directamente a ese test en vez de quedarte en Pacientes.
 ### `pages/paciente-detalle.html`
 Muestra toda la información de un paciente puntual (nombre, apellido, ID,
 fecha de nacimiento, comentarios) — los datos que no se ven en el listado de
-`pacientes.html`. Tiene los mismos dos botones que el listado ("Usar este
-paciente") más uno nuevo: "Ver historial de este paciente", que te lleva a
+`pacientes.html`. Tiene el mismo botón "Usar este paciente" que el listado,
+más dos nuevos: "Ver historial de este paciente" (te lleva a
 `historial.html`, pasándole el paciente para que cargue su historial
-directamente.
+directamente) y "Eliminar paciente" (pide confirmación explícita avisando
+que también se borra todo su historial; si el paciente eliminado era el
+activo en la sesión, lo desactiva antes de volver al listado).
 
 ### `pages/historial.html`
 Dos partes: un buscador de pacientes (igual al de `pacientes.html`) y, una
@@ -372,10 +448,12 @@ la URL (por ejemplo desde `paciente-detalle.html`), el historial de ese
 paciente se carga solo, sin tener que buscarlo de nuevo.
 
 ### `pages/configuracion.html`, `pages/estado-dispositivo.html`
-Páginas "en construcción". Tienen la barra superior y el menú funcionando,
-pero el contenido todavía es solo un cartel de "esta sección no está
-implementada todavía". Existen para que la navegación no quede rota mientras
-se construyen esas funciones más adelante.
+Páginas "en construcción": tienen la barra superior funcionando, pero el
+contenido todavía es solo un cartel de "esta sección no está implementada
+todavía". `estado-dispositivo.html` sigue accesible desde el menú
+hamburguesa; `configuracion.html` ya no tiene un link en el menú de ninguna
+página (se sacó porque no cumplía ningún rol todavía) pero el archivo sigue
+existiendo, sin enlazar, para cuando se implemente esa sección.
 
 ---
 
@@ -445,7 +523,62 @@ Todo lo demás del sitio sigue este mismo patrón: una página `.html` con su
 
 ---
 
-## 6. Preguntas que ya surgieron
+## 7. Firmware (`firmware/`)
+
+Es un proyecto de **PlatformIO** (la herramienta para programar el ESP32),
+separado del backend/frontend porque usa otro lenguaje (C++, no
+Python/JavaScript) y corre en otra máquina (el microcontrolador, no la
+computadora servidor).
+
+- **`platformio.ini`** — la configuración del proyecto: qué placa es
+  (`nodemcu-32s`), qué framework usa (`arduino`), y qué librerías externas
+  necesita (`Adafruit ADXL345` para el acelerómetro, `U8g2` para la pantalla
+  OLED).
+- **`src/main.cpp`** — el programa real. Define a qué pin físico está
+  conectado cada componente (los 4 botones de colores, el joystick, el
+  encoder rotativo, el acelerómetro, los 4 LEDs y la pantalla OLED) y, en
+  `loop()`, los lee/controla todo el tiempo. Imprime lo que detecta por el
+  puerto Serial (la consola de la PC conectada por USB) y acepta comandos
+  simples desde ahí (`r`/`v`/`az`/`am`/`off` para prender o apagar cada LED,
+  función `procesarComandoLED`). Además, se conecta por WiFi y:
+  - manda al backend un paquete UDP cada vez que se aprieta uno de los 4
+    botones de colores (`BOTON_ROJO`, `BOTON_VERDE`, `BOTON_AZUL`,
+    `BOTON_AMARILLO`) — eso es lo que hace que Stroop ya reaccione al
+    control físico real;
+  - manda un paquete `ESP32_ONLINE` apenas termina de conectarse al WiFi,
+    para que el backend sepa de entrada a qué dirección contestarle (sin
+    esto, recién se enteraría cuando se apretara el primer botón);
+  - en `loop()`, revisa con `udp.parsePacket()` si llegó algún paquete
+    nuevo (un comando mandado por el backend) y, si llegó, le pasa el
+    texto a `procesarComandoLED` — el mismo código que ya entendía
+    `"LED_ROJO"`/`"LED_OFF"`/etc. por Serial, ahora también los entiende
+    por WiFi.
+- **`pruebas_individuales/`** — sketches viejos (`prueba_boton.cpp`,
+  `pruebajoystick.cpp`) que se usaron para probar cada componente por
+  separado antes de integrarlos en `main.cpp`. Quedan como referencia
+  histórica; PlatformIO no los compila (solo compila lo que está en `src/`).
+
+**Estado actual:** los 4 botones de colores ya viajan ESP32 → backend →
+navegador (UDP → WebSocket) y Stroop los usa de verdad. El sentido contrario
+también funciona ya: backend → ESP32 (UDP), confirmado con el ESP32 real
+mandando varios comandos `LED_*` seguidos y viéndolos llegar y ejecutarse
+todos, en orden, por el Monitor Serial — y ahora N-Back lo usa de verdad
+como estímulo (ver `pages/test-nback.html` más abajo), confirmado jugando un
+test completo contra el ESP32 real y viendo cada LED prenderse en el orden
+correcto. Joystick, encoder y acelerómetro siguen siendo solo lecturas
+locales por Serial, todavía no mandan nada por la red.
+
+**Importante:** la IP de la PC está hardcodeada en `main.cpp`
+(`IP_PC`) porque el ESP32 necesita saber a dónde mandar los paquetes. Esa IP
+cambia cada vez que la PC se conecta a una red distinta (hotspot del celular
+vs. WiFi de casa, por ejemplo) — si los botones dejan de llegarle al
+navegador, lo primero a revisar es si `IP_PC` todavía coincide con la IP
+actual de la PC (`ipconfig` en Windows) en la red en la que está conectado
+el ESP32 ahora.
+
+---
+
+## 8. Preguntas que ya surgieron
 
 **¿Qué es Uvicorn?**
 FastAPI (el código de `server.py`) es la receta: dice "si llega este pedido,

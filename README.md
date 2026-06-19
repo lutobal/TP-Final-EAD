@@ -70,8 +70,14 @@ Para apagarlo, `Ctrl+C` en esa misma terminal.
   compilación ni piezas "compartidas": cada página `.html` tiene su propio
   `<script>` adentro con todo lo que necesita, de arriba a abajo, sin saltar
   a otro archivo (a costa de repetir un poco de código entre páginas).
-- `firmware/` — (todavía no existe) va a contener el código del ESP32 cuando
-  esté armada la consola física.
+- `firmware/` — proyecto de PlatformIO con el código C++ que corre en el
+  ESP32 (lee botones/joystick/encoder/acelerómetro, controla LEDs y la
+  pantalla OLED). Los 4 botones de colores ya mandan sus eventos por UDP al
+  backend, que los reenvía en vivo al navegador por WebSocket — Stroop ya
+  reacciona al botón físico real. El backend también puede mandarle comandos
+  al ESP32 por el mismo canal UDP (por ejemplo, prender un LED puntual como
+  estímulo de un test). El resto (joystick, encoder, acelerómetro) todavía
+  no está conectado de esa forma. Ver `docs/GUIA_DE_ARCHIVOS.md` sección 7.
 - `docs/` — documentación del proyecto.
 - `references/` — prototipo previo en Python/Pygame, usado solo como
   referencia conceptual (no es código que se reutilice).
