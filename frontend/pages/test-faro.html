@@ -403,6 +403,188 @@
       let primerHallazgoDerMs = null;
       let feedbackEncontrados = [];
       let metricasFinal = null;
+      let tUltimoFrame = null;
+
+      // ===== Joystick físico: control por velocidad (igual que en Tracking:
+      // el stick vuelve solo al centro al soltarlo, así que su desplazamiento
+      // respecto al centro se integra como velocidad de la linterna). =====
+      const JOYSTICK_DEADZONE = 150; // ignora ruido del ADC alrededor del centro
+      const JOYSTICK_VELOCIDAD_PX_SEG = 300; // velocidad de la linterna con el stick a fondo
+      let joystickX = null;
+      let joystickY = null;
+      let joystickCentroX = null;
+      let joystickCentroY = null;
+
+      // --- Encoder rotativo como "mouse" de navegación (mismo patrón en
+      // los 5 tests) ---
+      // En todas las pantallas (instrucciones, configuración, pausa,
+      // resultados), el encoder maneja un cursor que se mueve entre
+      // "paradas" (botones del carrusel, opciones de contraste, campos
+      // numéricos, botones): girar mueve el cursor, y el botón del encoder
+      // activa lo resaltado. Sobre un campo numérico, el botón entra/sale
+      // de "modo edición": ahí adentro, girar cambia el valor en vez de
+      // mover el cursor.
+      let focoEncoderIdx = 0;
+      let focoEncoderContextoAnterior = null;
+      let editandoNumeroConEncoder = false;
+
+      function contextoFocoEncoder() {
+        if (!document.getElementById("pause-overlay").hidden) return "pausa";
+        if (!document.getElementById("screen-gate").hidden) return "gate";
+        if (!document.getElementById("screen-instrucciones").hidden) return "instrucciones";
+        if (!document.getElementById("screen-config").hidden) return "config";
+        if (!document.getElementById("screen-resultados").hidden) {
+          return document.getElementById("acciones-post-guardado").hidden ? "resultados" : "resultados-post";
+        }
+        return null;
+      }
+
+      function elementosFocoEncoder() {
+        switch (contextoFocoEncoder()) {
+          case "pausa":
+            return [
+              document.getElementById("pausa-reanudar"),
+              document.getElementById("pausa-reiniciar"),
+              document.getElementById("pausa-menu"),
+            ];
+          case "gate":
+            return Array.from(document.querySelectorAll("#screen-gate a"));
+          case "instrucciones":
+            return Array.from(
+              document.querySelectorAll("#screen-instrucciones .back-link, #carousel-anterior, #carousel-saltear, #carousel-siguiente")
+            ).filter((el) => el.offsetParent !== null);
+          case "config":
+            return Array.from(
+              document.querySelectorAll(
+                "#screen-config .level-option, #screen-config input[type=number], #screen-config #config-continuar"
+              )
+            ).filter((el) => el.offsetParent !== null);
+          case "resultados":
+            return Array.from(document.querySelectorAll("#acciones-resultado button"));
+          case "resultados-post":
+            return Array.from(document.querySelectorAll("#acciones-post-guardado a, #acciones-post-guardado button"));
+          default:
+            return [];
+        }
+      }
+
+      function resaltarFocoEncoder() {
+        document.querySelectorAll(".foco-encoder").forEach((el) =>
+          el.classList.remove("foco-encoder", "foco-encoder-editando")
+        );
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        focoEncoderIdx = Math.max(0, Math.min(elementos.length - 1, focoEncoderIdx));
+        elementos[focoEncoderIdx].classList.add("foco-encoder");
+        if (editandoNumeroConEncoder) elementos[focoEncoderIdx].classList.add("foco-encoder-editando");
+      }
+
+      function reiniciarFocoEncoderSiCambioDeContexto() {
+        const contexto = contextoFocoEncoder();
+        if (contexto !== focoEncoderContextoAnterior) {
+          focoEncoderContextoAnterior = contexto;
+          // En instrucciones arranca resaltado "Siguiente" (último de los 3
+          // botones), no "Anterior" (que además empieza deshabilitado).
+          focoEncoderIdx = contexto === "instrucciones" ? elementosFocoEncoder().length - 1 : 0;
+          editandoNumeroConEncoder = false;
+        }
+      }
+
+      function moverFocoEncoder(direccion) {
+        reiniciarFocoEncoderSiCambioDeContexto();
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        const actual = elementos[focoEncoderIdx];
+
+        if (editandoNumeroConEncoder && actual && actual.tagName === "INPUT") {
+          const paso = parseFloat(actual.step) || 1;
+          const min = actual.min !== "" ? parseFloat(actual.min) : -Infinity;
+          const max = actual.max !== "" ? parseFloat(actual.max) : Infinity;
+          let valor = (parseFloat(actual.value) || 0) + paso * direccion;
+          valor = Math.max(min, Math.min(max, valor));
+          actual.value = valor;
+          actual.dispatchEvent(new Event("input", { bubbles: true }));
+          return;
+        }
+
+        focoEncoderIdx = Math.max(0, Math.min(elementos.length - 1, focoEncoderIdx + direccion));
+        resaltarFocoEncoder();
+      }
+
+      function activarFocoEncoder() {
+        reiniciarFocoEncoderSiCambioDeContexto();
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        const actual = elementos[focoEncoderIdx];
+        if (!actual) return;
+
+        if (actual.tagName === "INPUT") {
+          editandoNumeroConEncoder = !editandoNumeroConEncoder;
+          resaltarFocoEncoder();
+          return;
+        }
+
+        actual.click();
+      }
+
+      function navegarConEncoder(direccion) {
+        moverFocoEncoder(direccion);
+      }
+
+      // El botón del encoder confirma/activa lo que esté resaltado (ver
+      // activarFocoEncoder) — en instrucciones, eso es Anterior/Saltear/
+      // Siguiente; en el resto, niveles/números/botones de cada pantalla.
+      function confirmarConEncoder() {
+        // Mientras estás jugando (sin pausa abierta todavía), el botón del
+        // encoder pausa el test, igual que tocar el botón de pausa en
+        // pantalla. Ya pausado, navegar las 3 opciones lo maneja
+        // activarFocoEncoder() de abajo (contexto "pausa").
+        if (!document.getElementById("screen-test").hidden && document.getElementById("pause-overlay").hidden) {
+          document.getElementById("btn-pausa").click();
+          return;
+        }
+        activarFocoEncoder();
+      }
+
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (event.data.startsWith("JOYSTICK,")) {
+            const [, xTexto, yTexto] = event.data.split(",");
+            joystickX = parseInt(xTexto, 10);
+            joystickY = parseInt(yTexto, 10);
+            if (joystickCentroX === null) {
+              joystickCentroX = joystickX;
+              joystickCentroY = joystickY;
+            }
+          } else if (event.data === "BOTON_STICK") {
+            if (document.getElementById("screen-test").hidden) return;
+            intentarSeleccionar();
+          } else if (event.data === "ENCODER_DERECHA" || event.data === "ENCODER_IZQUIERDA") {
+            navegarConEncoder(event.data === "ENCODER_DERECHA" ? 1 : -1);
+          } else if (event.data === "BOTON_ENCODER") {
+            confirmarConEncoder();
+          }
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, el test sigue
+        // funcionando igual con el mouse y la barra espaciadora.
+      }
+
+      function aplicarMovimientoJoystick(dtSeg) {
+        if (joystickCentroX === null || dtSeg <= 0) return;
+
+        const mover = (valorActual, centro) => {
+          const delta = valorActual - centro;
+          if (Math.abs(delta) < JOYSTICK_DEADZONE) return 0;
+          const normalizado = Math.max(-1, Math.min(1, delta / 2048));
+          return normalizado * JOYSTICK_VELOCIDAD_PX_SEG * dtSeg;
+        };
+
+        cursorX = Math.max(0, Math.min(ANCHO_CANVAS, cursorX + mover(joystickX, joystickCentroX)));
+        cursorY = Math.max(0, Math.min(ALTO_CANVAS, cursorY + mover(joystickY, joystickCentroY)));
+        marcarCobertura();
+      }
 
       function generarObjetivos(cantidad, radio) {
         const margen = radio + 10;
@@ -493,6 +675,10 @@
 
       function loopAnim() {
         if (!document.getElementById("screen-test").hidden && !pausado && !testTerminado) {
+          const ahora = Date.now();
+          const dtSeg = tUltimoFrame === null ? 0 : (ahora - tUltimoFrame) / 1000;
+          tUltimoFrame = ahora;
+          aplicarMovimientoJoystick(dtSeg);
           dibujar();
         }
         animFrameId = requestAnimationFrame(loopAnim);
@@ -552,10 +738,26 @@
         }
       });
 
+      // Manda un comando a la OLED del control físico (timer y resultados).
+      // Si el ESP32 no está conectado, falla en silencio y el test sigue
+      // igual (mismo criterio que los LEDs de N-Back).
+      async function enviarComandoDispositivo(comando) {
+        try {
+          await fetch("/api/dispositivo/comando", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comando }),
+          });
+        } catch {
+          // Sin conexión con el ESP32: no hace nada.
+        }
+      }
+
       function tickTimer() {
         if (pausado || testTerminado) return;
         tiempoRestanteSeg -= 1;
         actualizarProgreso();
+        enviarComandoDispositivo(`OLED_TIMER:${tiempoRestanteSeg}`);
         if (tiempoRestanteSeg <= 0) finalizarTest();
       }
 
@@ -571,6 +773,8 @@
         primerHallazgoDerMs = null;
         feedbackEncontrados = [];
         tiempoRestanteSeg = tiempoDisponibleSeg;
+        tUltimoFrame = null;
+        enviarComandoDispositivo(`OLED_TIMER:${tiempoRestanteSeg}`);
 
         mostrarPantalla("screen-test");
         actualizarProgreso();
@@ -602,6 +806,7 @@
       document.getElementById("pausa-reanudar").addEventListener("click", () => {
         pausado = false;
         tPausaAcumMs += Date.now() - tPausaInicio;
+        tUltimoFrame = null;
         document.getElementById("pause-overlay").hidden = true;
       });
 
@@ -613,7 +818,7 @@
       document.getElementById("pausa-menu").addEventListener("click", () => {
         clearInterval(timerInterval);
         if (animFrameId) cancelAnimationFrame(animFrameId);
-        window.location.href = "/pages/test-detail.html?slug=faro";
+        window.location.href = "/pages/home.html";
       });
 
       // ===== Resultados =====
@@ -730,6 +935,10 @@
         metricasFinal = calcularMetricas();
         const m = metricasFinal;
         const totalEncontrados = m.objetivos_izquierdos_encontrados + m.objetivos_derechos_encontrados;
+
+        enviarComandoDispositivo(
+          `OLED_RESULTADO:Faro;Obj: ${totalEncontrados}/${m.cantidad_objetivos};Omision: ${m.indice_omision_izquierda_pct}%`
+        );
 
         document.getElementById("resultados-resumen").innerHTML = `
           <p><strong>Objetivos encontrados:</strong> ${totalEncontrados} / ${m.cantidad_objetivos}</p>

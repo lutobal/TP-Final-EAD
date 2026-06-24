@@ -1032,26 +1032,6 @@ body {
   border: 1px solid var(--color-border);
 }
 
-.laberinto-control-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  width: 150px;
-}
-
-#laberinto-control-canvas {
-  cursor: crosshair;
-}
-
-.laberinto-control-caption {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  text-align: center;
-  margin: 0;
-}
-
 /* Ilustraciones del carrusel de instrucciones del test de Laberinto */
 .laberinto-demo-stage {
   position: relative;
@@ -1221,4 +1201,19 @@ body {
   color: var(--color-text-muted);
   text-align: center;
   margin-top: 4px;
+}
+
+/* Resaltado del "cursor" del encoder rotativo: marca qué elemento se
+   activaría si apretás el botón del encoder ahora mismo. La variante
+   "-editando" se usa solo sobre un campo numérico, mientras girar el
+   encoder está cambiando su valor en vez de mover el cursor. */
+.foco-encoder {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.foco-encoder-editando {
+  outline-color: var(--color-danger);
+  background: var(--color-info-bg);
 }

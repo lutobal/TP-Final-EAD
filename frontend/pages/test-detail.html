@@ -138,9 +138,63 @@
             document.getElementById("placeholder-msg").hidden = false;
           }
         });
+
+        resaltarFocoDetalle();
       }
 
       cargarTest();
+
+      // --- Encoder rotativo como "mouse" de navegación: activar "Realizar
+      // este test" sin usar el mouse (también se puede volver atrás, o
+      // recorrer cada métrica de "Métricas calculadas y cómo se
+      // interpretan" y abrirla/cerrarla, si el test las tiene). El foco
+      // arranca directo en "Realizar este test" (último elemento, sea cual
+      // sea la cantidad de métricas), que es la acción principal de esta
+      // pantalla. ---
+      let focoDetalleIdx = Infinity;
+
+      function elementosFocoDetalle() {
+        return Array.from(
+          document.querySelectorAll(
+            "#test-detail .back-link, #test-detail .metricas-detalle summary, #test-detail #iniciar-test"
+          )
+        );
+      }
+
+      function resaltarFocoDetalle() {
+        document.querySelectorAll(".foco-encoder").forEach((el) => el.classList.remove("foco-encoder"));
+        const elementos = elementosFocoDetalle();
+        if (elementos.length === 0) return;
+        focoDetalleIdx = Math.max(0, Math.min(elementos.length - 1, focoDetalleIdx));
+        elementos[focoDetalleIdx].classList.add("foco-encoder");
+      }
+
+      function moverFocoDetalle(direccion) {
+        const elementos = elementosFocoDetalle();
+        if (elementos.length === 0) return;
+        focoDetalleIdx = Math.max(0, Math.min(elementos.length - 1, focoDetalleIdx + direccion));
+        resaltarFocoDetalle();
+      }
+
+      function activarFocoDetalle() {
+        const elementos = elementosFocoDetalle();
+        if (elementos.length === 0) return;
+        elementos[Math.max(0, Math.min(elementos.length - 1, focoDetalleIdx))].click();
+      }
+
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (event.data === "ENCODER_DERECHA" || event.data === "ENCODER_IZQUIERDA") {
+            moverFocoDetalle(event.data === "ENCODER_DERECHA" ? 1 : -1);
+          } else if (event.data === "BOTON_ENCODER") {
+            activarFocoDetalle();
+          }
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, esta página sigue
+        // funcionando igual con el mouse.
+      }
     }
   </script>
 </body>

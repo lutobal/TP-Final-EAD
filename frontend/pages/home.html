@@ -70,6 +70,25 @@
       });
 
       // --- Lo que es propio de esta página: traer y mostrar los tests ---
+
+      // Cada vez que se entra a Home se pide volver a la pantalla del menú
+      // en la OLED del control físico, así no queda pegada la info (timer
+      // o resultados) del último test que se jugó. Si el ESP32 no está
+      // conectado, el backend contesta 503 y no pasa nada (se ignora).
+      //
+      // Se manda en "pageshow" en vez de directo en el script: ese evento
+      // se dispara tanto en una carga normal como cuando el navegador
+      // restaura la página desde memoria al volver con el botón "atrás"
+      // (bfcache) — con solo el script de arriba a abajo, ese segundo caso
+      // no volvía a ejecutar nada y la OLED se quedaba con la info vieja.
+      window.addEventListener("pageshow", () => {
+        fetch("/api/dispositivo/comando", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ comando: "OLED_MENU" }),
+        }).catch(() => {});
+      });
+
       async function cargarTests() {
         const grid = document.getElementById("tests-grid");
         const respuesta = await fetch("/api/tests");
@@ -85,9 +104,51 @@
           `
           )
           .join("");
+
+        resaltarFocoHome();
       }
 
       cargarTests();
+
+      // --- Encoder rotativo como "mouse" de navegación: elegir qué test
+      // abrir sin usar el mouse. Girar mueve cuál tarjeta está resaltada,
+      // el botón del encoder "hace clic" en la tarjeta resaltada. ---
+      let focoHomeIdx = 0;
+
+      function resaltarFocoHome() {
+        const cards = Array.from(document.querySelectorAll("#tests-grid .card"));
+        cards.forEach((c) => c.classList.remove("foco-encoder"));
+        if (cards.length === 0) return;
+        focoHomeIdx = Math.max(0, Math.min(cards.length - 1, focoHomeIdx));
+        cards[focoHomeIdx].classList.add("foco-encoder");
+      }
+
+      function moverFocoHome(direccion) {
+        const cards = Array.from(document.querySelectorAll("#tests-grid .card"));
+        if (cards.length === 0) return;
+        focoHomeIdx = Math.max(0, Math.min(cards.length - 1, focoHomeIdx + direccion));
+        resaltarFocoHome();
+      }
+
+      function activarFocoHome() {
+        const cards = Array.from(document.querySelectorAll("#tests-grid .card"));
+        if (cards.length === 0) return;
+        cards[Math.max(0, Math.min(cards.length - 1, focoHomeIdx))].click();
+      }
+
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (event.data === "ENCODER_DERECHA" || event.data === "ENCODER_IZQUIERDA") {
+            moverFocoHome(event.data === "ENCODER_DERECHA" ? 1 : -1);
+          } else if (event.data === "BOTON_ENCODER") {
+            activarFocoHome();
+          }
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, Home sigue
+        // funcionando igual con el mouse.
+      }
     }
   </script>
 </body>

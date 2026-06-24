@@ -6,14 +6,13 @@
 #include <WiFi.h>        // Conexión WiFi del ESP32
 #include <WiFiUdp.h>      // Envío de paquetes UDP (botones -> PC)
 
-// ======================================================
-// WIFI Y UDP: paso 1 de la integración con la PC.
-// Por ahora solo el botón rojo manda un evento por UDP.
-// ======================================================
-const char* WIFI_SSID = "casa tobal";         // <-- completar con el nombre del hotspot
-const char* WIFI_PASSWORD = "Tobal35!"; // <-- completar con la contraseña del hotspot
 
-IPAddress IP_PC(192, 168, 86, 153); // IP de la PC dentro de la red WiFi actual
+// WIFI Y UDP: conexión con la PC (backend NeuroRehab).
+
+const char* WIFI_SSID = "Luana";         // <-- completar con el nombre del hotspot
+const char* WIFI_PASSWORD = "12345678"; // <-- completar con la contraseña del hotspot
+
+IPAddress IP_PC(172, 20, 10, 4); // IP de la PC dentro de la red WiFi actual
 const unsigned int PUERTO_UDP = 4210; // ESP32 -> PC (eventos de botones)
 
 WiFiUDP udp;
@@ -21,27 +20,57 @@ WiFiUDP udp;
 
 //Seteamos los pines a los que asociamos cada componente
 int boton_rojo = 5; 
-int boton_verde = 14;
-int boton_azul = 19;
-int boton_amarillo = 17;
+int boton_verde = 17;
+int boton_azul = 18;
+int boton_amarillo = 19;
 
-// int stick_X = 35;
-// int stick_Y = 34;
-// int stick_Boton = 23;
+int stick_X = 32;
+int stick_Y = 35;
+int stick_Boton = 34;
+// Para mandar la posicion del joystick por UDP cada cierto tiempo, no en
+// cada vuelta de loop() (ver uso mas abajo).
+unsigned long ultimoTiempoJoystick = 0;
+const unsigned long intervaloJoystickMs = 150;
 
 //Pines del encoder
-int Rot_CLK = 26; //CLK--> detecta que el encoder se movió, que hubo un paso de giro.
-int Rot_DT = 27; // DT es la referencia; comparando CLK con DT, se interpreta la dirección del giro (derecha o izquierda)
-int Rot_SW = 32; //Botón del encoder: cuando apretas hacia abajo, se comporta como un botón común.
+int Rot_CLK = 25; //CLK--> detecta que el encoder se movió, que hubo un paso de giro.
+int Rot_DT = 26; // DT es la referencia; comparando CLK con DT, se interpreta la dirección del giro (derecha o izquierda)
+int Rot_SW = 27; //Botón del encoder
 
 //Lógica del encoder: cuando giras la perilla, el pin va cambiando entre high y low, se detectan los cambios y se interpreta: "Hubo un paso de giro"
 //giro a la derecha --> +1 paso. Giro a la izquierda--> -1 paso.
-int estadoAnteriorCLK; // Guarda el estado anterior de CLK para detectar cuándo cambia
-int contadorEncoder = 0; // Contador que empieza en cero y cuenta cuántos pasos giró el encoder
 
-// Para debounce del botón --> EXPLICAR DESPUES??
-unsigned long ultimoTiempoBoton = 0;
-const int DEBOUNCE_MS = 200;
+//ESTO SE QUEDA O SE VA?
+//Se lee por INTERRUPCION (no por polling en loop()) porque loop() tiene
+//varios delay() (botones, joystick): mientras el programa está parado en
+//un delay(), un giro rápido del encoder genera varios pulsos que el
+//polling se pierde, el algoritmo queda desincronizado, y el síntoma es
+//justo el que se vio: parecía que siempre giraba "a la derecha" y solo
+//detectaba "izquierda" al cambiar de sentido. Con la interrupción, cada
+//pulso se captura en el instante exacto en que ocurre.
+
+//Volatile indica que no se debe confiar en el valor viejo, sino que el valo del encoder puede cambiar en cualquier momento
+//Si lo ponemos adentro del loop, el contador volvería a cero en cada vuelta 
+volatile long contadorEncoder = 0; // Cuenta total de pasos (para debug/referencia)
+volatile long contadorEncoderPendiente = 0; // Pasos sin "drenar" todavía hacia UDP/Serial desde loop()
+volatile unsigned long ultimoPulsoEncoderUs = 0;
+const unsigned long DEBOUNCE_ENCODER_US = 1000; // 1 ms: filtra el rebote del contacto mecánico
+
+void IRAM_ATTR isrEncoder() {
+  unsigned long ahoraUs = micros();
+  if (ahoraUs - ultimoPulsoEncoderUs < DEBOUNCE_ENCODER_US) return;
+  ultimoPulsoEncoderUs = ahoraUs;
+
+  // Invertido respecto a la comparación "de manual": en este cableado
+  // físico daba derecha/izquierda al revés de lo esperado.
+  if (digitalRead(Rot_DT) != digitalRead(Rot_CLK)) {
+    contadorEncoder++;
+    contadorEncoderPendiente++;
+  } else {
+    contadorEncoder--;
+    contadorEncoderPendiente--;
+  }
+}
 
 // Creamos el objeto del acelerómetro.
 // A partir de ahora, vamos a usar "acelerometro" para pedirle datos al sensor.
@@ -57,16 +86,21 @@ bool acelerometroOK = false;
 //LEDs
 int LED_AMARILLO = 33;
 int LED_ROJO = 16;
-int LED_VERDE = 18;
+int LED_VERDE = 21;
 int LED_AZUL = 4;
 
 //OLED
 U8G2_SH1106_128X64_NONAME_F_SW_I2C display(
     U8G2_R0,
     13,              // SCL
-    25,              // SDA
+    14,              // SDA
     U8X8_PIN_NONE    // RESET
 );
+
+// Corrimiento horizontal de todo el texto: este panel recorta los primeros
+// pixeles contra el borde izquierdo (se veia "ENU" en vez de "MENU"), asi
+// que se arranca a dibujar mas adentro en vez de en x=0.
+const int OLED_OFFSET_X = 11;
 
 
 void mostrarEstado(String test, int aciertos, int errores)
@@ -78,7 +112,7 @@ void mostrarEstado(String test, int aciertos, int errores)
     display.setFont(u8g2_font_ncenB08_tr);
 
     // Escribe el nombre del proyecto
-    display.drawStr(0, 12, "NeuroRehab");
+    display.drawStr(OLED_OFFSET_X, 12, "NeuroRehab");
 
     // Cambia a una fuente más chica
     display.setFont(u8g2_font_6x10_tr);
@@ -86,21 +120,21 @@ void mostrarEstado(String test, int aciertos, int errores)
     // --------------------------------------------------
     // Nombre del test
     // --------------------------------------------------
-    display.setCursor(0, 30);
+    display.setCursor(OLED_OFFSET_X, 30);
     display.print("Test: ");
     display.print(test);
 
     // --------------------------------------------------
     // Cantidad de aciertos
     // --------------------------------------------------
-    display.setCursor(0, 45);
+    display.setCursor(OLED_OFFSET_X, 45);
     display.print("Aciertos: ");
     display.print(aciertos);
 
     // --------------------------------------------------
     // Cantidad de errores
     // --------------------------------------------------
-    display.setCursor(0, 60);
+    display.setCursor(OLED_OFFSET_X, 60);
     display.print("Errores: ");
     display.print(errores);
 
@@ -114,40 +148,102 @@ void mostrarMensajeOLED(String mensaje)
     display.clearBuffer();
 
     display.setFont(u8g2_font_ncenB08_tr);
-    display.drawStr(0, 12, "NeuroRehab");
+    display.drawStr(OLED_OFFSET_X, 12, "NeuroRehab");
 
     display.setFont(u8g2_font_6x10_tr);
-    display.setCursor(0, 35);
+    display.setCursor(OLED_OFFSET_X, 35);
     display.print(mensaje);
 
     display.sendBuffer();
 }
 
-//Prende/apaga los LEDs segun el comando recibido. Entiende los comandos
-//cortos que se escriben a mano por el Monitor Serial ("r","v","az","am","off")
-//y los comandos largos que manda el backend por UDP ("LED_ROJO", etc.).
+//Muestra varias líneas cortas en la OLED, separadas por ';' en el texto que
+//llega (lo usa el resultado final de un test: nombre del test + 1-2 métricas).
+void mostrarLineasOLED(String texto)
+{
+    display.clearBuffer();
+
+    display.setFont(u8g2_font_ncenB08_tr);
+    display.drawStr(OLED_OFFSET_X, 12, "NeuroRehab");
+
+    display.setFont(u8g2_font_6x10_tr);
+    int y = 28;
+    int inicio = 0;
+    while (inicio < (int)texto.length() && y <= 60) {
+        int fin = texto.indexOf(';', inicio);
+        if (fin == -1) fin = texto.length();
+        display.setCursor(OLED_OFFSET_X, y);
+        display.print(texto.substring(inicio, fin));
+        y += 14;
+        inicio = fin + 1;
+    }
+
+    display.sendBuffer();
+}
+
+//Pantalla del menú principal: se usa al arrancar el ESP32 y también cada vez
+//que el frontend pide volver a este estado neutro (comando "OLED_MENU", que
+//manda home.html cada vez que se entra a esa página) para no dejar pegada
+//en la pantalla la info del último test que se jugó.
+void mostrarMenuOLED() {
+    display.clearBuffer();
+    display.setFont(u8g2_font_ncenB14_tr);
+    display.drawStr(OLED_OFFSET_X, 25, "MENU");
+    display.setFont(u8g2_font_6x10_tr);
+    display.drawStr(OLED_OFFSET_X, 50, "Elegi un test...");
+    display.sendBuffer();
+}
+
+//Prende/apaga los LEDs y maneja la OLED según el comando recibido por UDP
+//desde el backend: "LED_ROJO"/"LED_VERDE"/"LED_AZUL"/"LED_AMARILLO"/"LED_OFF"
+//(estímulos de N-Back y pruebas manuales desde /api/dispositivo/comando),
+//"OLED_TIMER:<segundos>" mientras corre un test con timer (Tracking, Faro,
+//Laberinto), "OLED_MENSAJE:<texto>" mientras corre un test sin timer
+//(Stroop, N-Back; por ejemplo, el nombre del test), "OLED_RESULTADO:
+//<linea1>;<linea2>;..." al terminar cualquier test, y "OLED_MENU" para
+//volver a la pantalla del menú principal (lo manda home.html).
 void procesarComandoLED(String comando) {
-  if (comando == "r" || comando == "LED_ROJO") {
+  if (comando.startsWith("OLED_TIMER:")) {
+    mostrarMensajeOLED("Tiempo: " + comando.substring(11) + "s");
+    return;
+  }
+
+  if (comando.startsWith("OLED_MENSAJE:")) {
+    mostrarMensajeOLED(comando.substring(13));
+    return;
+  }
+
+  if (comando.startsWith("OLED_RESULTADO:")) {
+    mostrarLineasOLED(comando.substring(15));
+    return;
+  }
+
+  if (comando == "OLED_MENU") {
+    mostrarMenuOLED();
+    return;
+  }
+
+  if (comando == "LED_ROJO") {
     digitalWrite(LED_ROJO, HIGH);
     Serial.println("LED ROJO ENCENDIDO");
   }
 
-  else if (comando == "v" || comando == "LED_VERDE") {
+  else if (comando == "LED_VERDE") {
     digitalWrite(LED_VERDE, HIGH);
     Serial.println("LED VERDE ENCENDIDO");
   }
 
-  else if (comando == "az" || comando == "LED_AZUL") {
+  else if (comando == "LED_AZUL") {
     digitalWrite(LED_AZUL, HIGH);
     Serial.println("LED AZUL ENCENDIDO");
   }
 
-  else if (comando == "am" || comando == "LED_AMARILLO") {
+  else if (comando == "LED_AMARILLO") {
     digitalWrite(LED_AMARILLO, HIGH);
     Serial.println("LED AMARILLO ENCENDIDO");
   }
 
-  else if (comando == "off" || comando == "LED_OFF") {
+  else if (comando == "LED_OFF") {
     digitalWrite(LED_AMARILLO, LOW);
     digitalWrite(LED_ROJO, LOW);
     digitalWrite(LED_VERDE, LOW);
@@ -167,21 +263,55 @@ void setup() {
   Serial.begin(115200); //Establece la comunicación entre el SP32 y la computadora
 
   //Conexion WiFi (necesaria para mandar eventos por UDP a la PC)
+  // WiFi.mode(WIFI_STA) + disconnect(true) antes de begin(): el ESP32 a
+  // veces arranca con el modo/credenciales de una conexion anterior
+  // guardada en flash, lo que hace que begin() se quede pegado. Forzar
+  // modo estacion y descartar esa conexion vieja antes de conectar evita eso.
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(100);
+
+  // Reduce la potencia de transmision del radio WiFi. A maxima potencia
+  // (default WIFI_POWER_19_5dBm) el pico de corriente del radio al
+  // transmitir es el consumo mas alto de toda la placa, y alimentando todo
+  // (OLED + acelerometro + LEDs + WiFi) desde el USB de una compu puede
+  // hacer caer la tension y resetear el ESP32 a medio programa. Como el
+  // hotspot esta cerca, bajar la potencia no debería afectar la conexion.
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Conectando a WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
+
+  // Con timeout (no "while" infinito): si el hotspot no esta disponible,
+  // el resto del hardware (botones, encoder, acelerometro, LEDs, OLED) se
+  // configura igual mas abajo. Sin este timeout, una falla de WiFi dejaba
+  // TODO el resto sin inicializar para siempre.
+  unsigned long inicioWiFi = millis();
+  const unsigned long TIMEOUT_WIFI_MS = 15000;
+  while (WiFi.status() != WL_CONNECTED && millis() - inicioWiFi < TIMEOUT_WIFI_MS) {
     delay(300);
     Serial.print(".");
   }
   Serial.println();
-  Serial.print("WiFi conectado. IP del ESP32: ");
-  Serial.println(WiFi.localIP());
 
-  // Apaga el modo de ahorro de energia del WiFi: con el ahorro de energia
-  // activado (que es el default), el ESP32 "duerme" el radio a ratos y
-  // puede perderse paquetes UDP entrantes que lleguen justo en ese momento
-  // (no afecta lo que el ESP32 manda, solo lo que recibe).
-  WiFi.setSleep(false);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi conectado. IP del ESP32: ");
+    Serial.println(WiFi.localIP());
+
+    // Apaga el modo de ahorro de energia del WiFi: con el ahorro de energia
+    // activado (que es el default), el ESP32 "duerme" el radio a ratos y
+    // puede perderse paquetes UDP entrantes que lleguen justo en ese momento
+    // (no afecta lo que el ESP32 manda, solo lo que recibe).
+    WiFi.setSleep(false);
+  } else {
+    Serial.print("AVISO: no conecto al WiFi en ");
+    Serial.print(TIMEOUT_WIFI_MS / 1000);
+    Serial.println("s (codigo de estado WiFi.status() impreso abajo). Sigue intentando" \
+                    " solo en background; mientras tanto no manda/recibe eventos UDP," \
+                    " pero el resto del hardware funciona igual.");
+    Serial.print("Codigo WiFi.status(): ");
+    Serial.println(WiFi.status());
+  }
 
   udp.begin(PUERTO_UDP);
 
@@ -200,32 +330,55 @@ void setup() {
   pinMode(boton_amarillo, INPUT_PULLUP);
   
   //Boton del joystick
-  // pinMode(stick_Boton, INPUT_PULLUP);
+  pinMode(stick_Boton, INPUT);
 
   //Encoer
   pinMode(Rot_CLK, INPUT_PULLUP);
   pinMode(Rot_DT, INPUT_PULLUP);
   pinMode(Rot_SW, INPUT_PULLUP); //Igual que los botones del LED: no apreto--> 1. Apreto--> 0.
 
-  estadoAnteriorCLK = digitalRead(Rot_CLK); //Lee como está el Rot_CLK en ese momento y lo guarda en la variable astadoAnteriorCLK
+  // El conteo de pasos se hace en isrEncoder() (interrupción), no por
+  // polling acá: ver el comentario junto a la declaración de contadorEncoder.
+  attachInterrupt(digitalPinToInterrupt(Rot_CLK), isrEncoder, CHANGE);
 
   //Acelerómetro
-   Wire.begin(21, 22);
+   Wire.begin(23, 22); // SDA = GPIO23, SCL = GPIO22
 
-  // Intenta detectar el acelerómetro.
-  // Si acelerometro.begin() devuelve false, significa que no lo encontró.
+  // Intenta detectar el acelerómetro en la dirección I2C default (0x53,
+  // pin ALT ADDRESS en bajo). Si no responde ahí, reintenta en 0x1D: varios
+  // clones del ADXL345 (modulos GY-291) traen el pin ALT ADDRESS en alto y
+  // quedan en esa dirección en vez de la default.
   // Mientras se prueban los componentes de a uno, no conviene trabar todo
   // el programa por esto: solo avisa y sigue. La lectura en loop() se salta
   // sola si acelerometroOK queda en false (ver mas abajo).
-  acelerometroOK = acelerometro.begin();
+  uint8_t direccionAcelerometro = ADXL345_DEFAULT_ADDRESS; // 0x53
+  acelerometroOK = acelerometro.begin(direccionAcelerometro);
   if (!acelerometroOK) {
-    Serial.println("ERROR: No se detecta el ADXL345");
+    direccionAcelerometro = 0x1D;
+    acelerometroOK = acelerometro.begin(direccionAcelerometro);
+  }
+
+  if (!acelerometroOK) {
+    Serial.println("ERROR: No se detecta el ADXL345 (probado en 0x53 y 0x1D)");
     Serial.println("Revisar conexiones: VCC, GND, SDA y SCL (sigue sin el acelerometro)");
   } else {
+    Serial.print("ADXL345 detectado en direccion I2C 0x");
+    Serial.println(direccionAcelerometro, HEX);
+
     // Configura el rango de medición del acelerómetro.
     // 2G significa que mide aceleraciones entre -2g y +2g.
     // Para inclinaciones y movimientos suaves está bien.
     acelerometro.setRange(ADXL345_RANGE_2_G);
+
+    // Algunos módulos ADXL345 (sobre todo clones) detectan bien por I2C
+    // (por eso begin() devuelve true) pero quedan en modo standby, sin
+    // arrancar a medir de verdad: ahí todos los ejes quedan clavados en 0.
+    // Forzamos a mano el bit "Measure" del registro POWER_CTL (0x2D), por
+    // si la escritura que hace la librería internamente no llegó a tomar.
+    Wire.beginTransmission(direccionAcelerometro);
+    Wire.write(0x2D);
+    Wire.write(0x08);
+    Wire.endTransmission();
   }
 
   //LEDs
@@ -241,14 +394,6 @@ void setup() {
   digitalWrite(LED_VERDE, LOW);
   digitalWrite(LED_AZUL, LOW);
 
-  //IMPORTANTE PARA CONECTAR DESPUES CON EL CÓDIGO BASE
-  //"r  -> prender LED rojo
-  //"v  -> prender LED verde
-  //az -> prender LED azul
-  //am -> prender LED amarillo"
-  //off -> apagar todos"
-
-
   //OLED
   // Inicializa el monitor serie
     Serial.begin(115200);
@@ -256,28 +401,12 @@ void setup() {
     // Inicializa la OLED
     display.begin();
 
-    // Borra el buffer gráfico
-    display.clearBuffer();
-
-    // Fuente grande para el mensaje principal
-    display.setFont(u8g2_font_ncenB14_tr);
-
-    // Escribe "HOLA"
-    display.drawStr(0, 25, "HOLA");
-
-    // Cambia a fuente más pequeña
-    display.setFont(u8g2_font_6x10_tr);
-
-    // Mensaje secundario
-    display.drawStr(0, 50, "OLED funcionando");
-
-    // Muestra el contenido en pantalla
-    display.sendBuffer();
+    // Pantalla del menú, la misma que se vuelve a mostrar cada vez que el
+    // frontend manda "OLED_MENU" (ver mostrarMenuOLED).
+    mostrarMenuOLED();
 
     // Mantiene esta pantalla durante 2 segundos
     delay(2000);
-
-
 
   Serial.println("PRUEBA DE HARDWARE INICIADA");
 }
@@ -292,7 +421,10 @@ void loop() {
   //se manda BOTON_X, así no hace falta un puerto ni una conexión aparte.
   int tamanoPaqueteUDP = udp.parsePacket();
   if (tamanoPaqueteUDP > 0) {
-    char bufferUDP[32];
+    // 160 bytes: los comandos cortos de LED entran de sobra, y también los
+    // de resultado de la OLED ("OLED_RESULTADO:Test;linea2;linea3..."), que
+    // con el buffer chico de antes (32) quedaban cortados a la mitad.
+    char bufferUDP[160];
     int leidos = udp.read(bufferUDP, sizeof(bufferUDP) - 1);
     bufferUDP[leidos > 0 ? leidos : 0] = '\0';
     String comandoRecibido = String(bufferUDP);
@@ -308,6 +440,7 @@ void loop() {
   int BOTON_AM = digitalRead(boton_amarillo);
   int BOTON_AZ = digitalRead(boton_azul);
   int BOTON_V = digitalRead(boton_verde);
+  int BOTON_ST = digitalRead(stick_Boton);
 
   //Si apretamos el botón, manda un cero e imprime botón apretado
   if (BOTON_R == LOW) {
@@ -339,72 +472,70 @@ void loop() {
     udp.endPacket();
     delay(200);
   }
-  // if (digitalRead(stick_Boton) == LOW) {
-  //   Serial.println("BOTON STICK XY APRETADO");
-  //   delay(200);
-  // }
+  if (BOTON_ST == LOW) {
+    Serial.println("BOTON STICK APRETADO");
+    udp.beginPacket(IP_PC, PUERTO_UDP);
+    udp.print("BOTON_STICK");
+    udp.endPacket();
+    delay(200);
+  }
 
-  //Lectura del joystick
+  //Lectura del joystick (streaming continuo de posicion, para el test de Tracking)
   // analogRead lee el voltaje del eje X/Y del joystick y lo convierte en un valor entre 0 y 4095 en el ESP32.
-  // int lecturaX = analogRead(stick_X);
-  // int lecturaY = analogRead(stick_Y);
+  int lecturaX = analogRead(stick_X);
+  int lecturaY = analogRead(stick_Y);
 
-  delay(100); //pausa de 100 ms
+  // Solo manda el paquete UDP cada intervaloJoystickMs (no en cada vuelta de
+  // loop): mandar por WiFi en cada iteracion mantiene al radio transmitiendo
+  // casi sin pausa, que es el consumo de corriente mas alto de la placa.
+  // Espaciar los envios le da tiempo a la fuente para recuperarse entre
+  // picos, sin perder fluidez para el test de Tracking.
+  if (millis() - ultimoTiempoJoystick >= intervaloJoystickMs) {
+    ultimoTiempoJoystick = millis();
 
+    udp.beginPacket(IP_PC, PUERTO_UDP);
+    udp.print("JOYSTICK,");
+    udp.print(lecturaX);
+    udp.print(",");
+    udp.print(lecturaY);
+    udp.endPacket();
 
-  // Serial.print("X = ");
-  // Serial.println(lecturaX);
+    Serial.print("JOYSTICK -> X: ");
+    Serial.print(lecturaX);
+    Serial.print(" | Y: ");
+    Serial.println(lecturaY);
+  }
 
-  // Serial.print("Y = ");
-  // Serial.println(lecturaY);
-
-  //Si es eje x es mayor a 2800, entonces se interpreta que el joystick se movió hacia la derecha
-  // if (lecturaX > 3000){
-  //   Serial.println("STICK X DERECHA");
-  //   delay(200);
-  // }
-  
-  //Si es eje x es mayor a 2800, entonces se interpreta que el joystick se movió hacia la derecha
-  // if (lecturaX < 1500){
-  //   Serial.println("STICK X IZQUIERDA");
-  //   delay(200);
-  // }
-
-  // //Si el valor del eje Y es menor a 1500, interpreta que el joystick fue hacia abajo.
-  // if (lecturaY < 1500){
-  //   Serial.println("STICK Y ARRIBA");
-  //   delay(200);
-  // }
-
-  //Si el valor del eje Y es mayor a 1500, interpreta que el joystick fue hacia abajo.
-  // if (lecturaY > 3000){
-  //   Serial.println("STICK Y ABAJO");
-  //   delay(200);
-  // }
-
-  //Lectura del Encoder
-   int estadoActualCLK = digitalRead(Rot_CLK);
-
-  if (estadoActualCLK != estadoAnteriorCLK) {
-    estadoActualCLK = digitalRead(Rot_CLK);
-    
-    int estadoDT = digitalRead(Rot_DT);
-
-    if (estadoDT != estadoActualCLK) {
-      contadorEncoder--;
-      Serial.print("ENCODER GIRO A LA IZQUIERDA | Contador = ");
-      Serial.println(contadorEncoder);
-    } else {
-      contadorEncoder++;
+  //Lectura del Encoder: el conteo en si ya lo hizo isrEncoder() por
+  //interrupcion (ver mas arriba); aca solo "drenamos" los pasos
+  //pendientes, uno por uno, para mandarlos por UDP/Serial. Drenarlos de
+  //a uno (no de una sola vez como un solo evento) es importante: si
+  //giraste rapido y se acumularon varios pasos entre una vuelta de loop()
+  //y la siguiente, cada paso manda su propio evento, para no perder
+  //pasos en la navegacion del menu (proximo paso de este trabajo).
+  while (contadorEncoderPendiente != 0) {
+    if (contadorEncoderPendiente > 0) {
+      contadorEncoderPendiente--;
       Serial.print("ENCODER GIRO A LA DERECHA | Contador = ");
       Serial.println(contadorEncoder);
+      udp.beginPacket(IP_PC, PUERTO_UDP);
+      udp.print("ENCODER_DERECHA");
+      udp.endPacket();
+    } else {
+      contadorEncoderPendiente++;
+      Serial.print("ENCODER GIRO A LA IZQUIERDA | Contador = ");
+      Serial.println(contadorEncoder);
+      udp.beginPacket(IP_PC, PUERTO_UDP);
+      udp.print("ENCODER_IZQUIERDA");
+      udp.endPacket();
     }
   }
 
-  estadoAnteriorCLK = estadoActualCLK;
-
   if (digitalRead(Rot_SW) == LOW) {
     Serial.println("BOTON DEL ENCODER APRETADO");
+    udp.beginPacket(IP_PC, PUERTO_UDP);
+    udp.print("BOTON_ENCODER");
+    udp.endPacket();
     delay(200);
   }
 
@@ -422,41 +553,26 @@ void loop() {
     float ay = evento.acceleration.y;
     float az = evento.acceleration.z;
 
-    // Serial.print("X = ");
-    // Serial.print(ax);
-    // Serial.print(" m/s2 | Y = ");
-    // Serial.print(ay);
-    // Serial.print(" m/s2 | Z = ");
-    // Serial.print(az);
-    // Serial.println(" m/s2");
+    udp.beginPacket(IP_PC, PUERTO_UDP);
+    udp.print("ACEL,");
+    udp.print(ax);
+    udp.print(",");
+    udp.print(ay);
+    udp.print(",");
+    udp.print(az);
+    udp.endPacket();
 
-    // Interpretación simple de inclinación
-    if (ax > 3) {
-      Serial.println("INCLINACION HACIA LA DERECHA");
-    }
-
-    if (ax < -3) {
-      Serial.println("INCLINACION HACIA LA IZQUIERDA");
-    }
-
-    if (ay > 3) {
-      Serial.println("INCLINACION HACIA ADELANTE");
-    }
-
-    if (ay < -3) {
-      Serial.println("INCLINACION HACIA ATRAS");
-    }
-
-  
-
+    Serial.print("ACELEROMETRO -> X: ");
+    Serial.print(ax);
+    Serial.print(" | Y: ");
+    Serial.print(ay);
+    Serial.print(" | Z: ");
+    Serial.println(az);
   }
 
-  //LEDS por Serial (comandos cortos, para probar a mano desde el Monitor Serial)
-  if (Serial.available() > 0) {
-    String comando = Serial.readStringUntil('\n');
-    comando.trim();
-    procesarComandoLED(comando);
-  }
-
+  // Pausa chica al final de cada vuelta: ahora que el envio del joystick ya
+  // no tiene su propio delay(100) (ver mas arriba), sin esto el loop() puede
+  // quedar girando sin pausa, y eso puede gatillar el watchdog del ESP32.
+  delay(5);
 }
 

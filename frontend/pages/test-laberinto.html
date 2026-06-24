@@ -105,11 +105,6 @@
         <div class="laberinto-canvas-wrap">
           <canvas id="laberinto-canvas" width="820" height="460"></canvas>
         </div>
-
-        <div class="laberinto-control-wrap">
-          <canvas id="laberinto-control-canvas" width="150" height="150"></canvas>
-          <p class="laberinto-control-caption">Control temporal: mové el mouse dentro del círculo para simular la inclinación.</p>
-        </div>
       </div>
     </section>
 
@@ -352,8 +347,7 @@
       const ANCHO_CANVAS = 820;
       const ALTO_CANVAS = 460;
       const RADIO_BOLA = 10;
-      const CONTROL_SIZE = 150; // ancho/alto del control circular (su propio canvas, fijo)
-      const RADIO_CONTROL = 65; // radio del círculo dentro del control = inclinación máxima
+      const RADIO_CONTROL = 65; // magnitud de inclinación (en unidades de offsetX/offsetY) que ya cuenta como "a fondo"
       const ACELERACION_PX_S2 = 260;
       const FRICCION_POR_SEG = 0.985; // se aplica escalada según el tiempo real entre frames
       const REBOTE = 0.4;
@@ -438,8 +432,6 @@
 
       const canvas = document.getElementById("laberinto-canvas");
       const ctx = canvas.getContext("2d");
-      const controlCanvas = document.getElementById("laberinto-control-canvas");
-      const controlCtx = controlCanvas.getContext("2d");
 
       let maze = null;
       let offsetX = 0;
@@ -471,70 +463,170 @@
       let tiempoTotalMs = null;
       let metricasFinal = null;
 
-      // Control circular dedicado que hace de "acelerómetro temporal": el
-      // centro del círculo es el reposo, y la distancia/dirección del mouse
-      // respecto a ese centro es la inclinación simulada — separado del
-      // canvas del laberinto para que el paciente tenga un punto de
-      // referencia visible (a diferencia de antes, que usaba el centro
-      // invisible del canvas del laberinto).
-      function dibujarControl() {
-        const centro = CONTROL_SIZE / 2;
-        controlCtx.clearRect(0, 0, CONTROL_SIZE, CONTROL_SIZE);
+      // ===== Acelerómetro físico: única fuente de inclinación de este test
+      // (no hay control por mouse). ax/ay vienen en m/s² (0 = plano,
+      // ±9.8 ≈ de canto); se escalan a offsetX/offsetY, que es lo que ya
+      // usa actualizarFrame() para mover la bolita. =====
+      const ACEL_RANGO_MS2 = 6; // inclinación que ya cuenta como "control a fondo"
 
-        controlCtx.fillStyle = "#eef1f5";
-        controlCtx.beginPath();
-        controlCtx.arc(centro, centro, RADIO_CONTROL, 0, Math.PI * 2);
-        controlCtx.fill();
-        controlCtx.strokeStyle = "#dde3ea";
-        controlCtx.lineWidth = 2;
-        controlCtx.stroke();
+      // --- Encoder rotativo como "mouse" de navegación (mismo patrón en
+      // los 5 tests) ---
+      // En todas las pantallas (instrucciones, configuración, pausa,
+      // resultados), el encoder maneja un cursor que se mueve entre
+      // "paradas" (botones del carrusel, opciones de complejidad, campos
+      // numéricos, botones): girar mueve el cursor, y el botón del encoder
+      // activa lo resaltado. Sobre un campo numérico, el botón entra/sale
+      // de "modo edición": ahí adentro, girar cambia el valor en vez de
+      // mover el cursor.
+      let focoEncoderIdx = 0;
+      let focoEncoderContextoAnterior = null;
+      let editandoNumeroConEncoder = false;
 
-        controlCtx.strokeStyle = "#9aa3ad";
-        controlCtx.lineWidth = 1;
-        controlCtx.beginPath();
-        controlCtx.moveTo(centro - 6, centro);
-        controlCtx.lineTo(centro + 6, centro);
-        controlCtx.moveTo(centro, centro - 6);
-        controlCtx.lineTo(centro, centro + 6);
-        controlCtx.stroke();
-
-        const px = centro + offsetX;
-        const py = centro + offsetY;
-        controlCtx.strokeStyle = "#2563eb";
-        controlCtx.lineWidth = 2;
-        controlCtx.beginPath();
-        controlCtx.moveTo(centro, centro);
-        controlCtx.lineTo(px, py);
-        controlCtx.stroke();
-
-        controlCtx.fillStyle = "#2563eb";
-        controlCtx.beginPath();
-        controlCtx.arc(px, py, 9, 0, Math.PI * 2);
-        controlCtx.fill();
+      function contextoFocoEncoder() {
+        if (!document.getElementById("pause-overlay").hidden) return "pausa";
+        if (!document.getElementById("screen-gate").hidden) return "gate";
+        if (!document.getElementById("screen-instrucciones").hidden) return "instrucciones";
+        if (!document.getElementById("screen-config").hidden) return "config";
+        if (!document.getElementById("screen-resultados").hidden) {
+          return document.getElementById("acciones-post-guardado").hidden ? "resultados" : "resultados-post";
+        }
+        return null;
       }
 
-      controlCanvas.addEventListener("mousemove", (event) => {
-        if (pausado || testTerminado) return;
-        const rect = controlCanvas.getBoundingClientRect();
-        const centro = CONTROL_SIZE / 2;
-        let dx = event.clientX - rect.left - centro;
-        let dy = event.clientY - rect.top - centro;
-        const dist = Math.hypot(dx, dy);
-        if (dist > RADIO_CONTROL) {
-          dx = (dx / dist) * RADIO_CONTROL;
-          dy = (dy / dist) * RADIO_CONTROL;
+      function elementosFocoEncoder() {
+        switch (contextoFocoEncoder()) {
+          case "pausa":
+            return [
+              document.getElementById("pausa-reanudar"),
+              document.getElementById("pausa-reiniciar"),
+              document.getElementById("pausa-menu"),
+            ];
+          case "gate":
+            return Array.from(document.querySelectorAll("#screen-gate a"));
+          case "instrucciones":
+            return Array.from(
+              document.querySelectorAll("#screen-instrucciones .back-link, #carousel-anterior, #carousel-saltear, #carousel-siguiente")
+            ).filter((el) => el.offsetParent !== null);
+          case "config":
+            return Array.from(
+              document.querySelectorAll(
+                "#screen-config .level-option, #screen-config input[type=number], #screen-config #config-continuar"
+              )
+            ).filter((el) => el.offsetParent !== null);
+          case "resultados":
+            return Array.from(document.querySelectorAll("#acciones-resultado button"));
+          case "resultados-post":
+            return Array.from(document.querySelectorAll("#acciones-post-guardado a, #acciones-post-guardado button"));
+          default:
+            return [];
         }
-        offsetX = dx;
-        offsetY = dy;
-        dibujarControl();
-      });
+      }
 
-      controlCanvas.addEventListener("mouseleave", () => {
-        if (testTerminado) return;
-        offsetX = 0;
-        offsetY = 0;
-        dibujarControl();
-      });
+      function resaltarFocoEncoder() {
+        document.querySelectorAll(".foco-encoder").forEach((el) =>
+          el.classList.remove("foco-encoder", "foco-encoder-editando")
+        );
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        focoEncoderIdx = Math.max(0, Math.min(elementos.length - 1, focoEncoderIdx));
+        elementos[focoEncoderIdx].classList.add("foco-encoder");
+        if (editandoNumeroConEncoder) elementos[focoEncoderIdx].classList.add("foco-encoder-editando");
+      }
+
+      function reiniciarFocoEncoderSiCambioDeContexto() {
+        const contexto = contextoFocoEncoder();
+        if (contexto !== focoEncoderContextoAnterior) {
+          focoEncoderContextoAnterior = contexto;
+          // En instrucciones arranca resaltado "Siguiente" (último de los 3
+          // botones), no "Anterior" (que además empieza deshabilitado).
+          focoEncoderIdx = contexto === "instrucciones" ? elementosFocoEncoder().length - 1 : 0;
+          editandoNumeroConEncoder = false;
+        }
+      }
+
+      function moverFocoEncoder(direccion) {
+        reiniciarFocoEncoderSiCambioDeContexto();
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        const actual = elementos[focoEncoderIdx];
+
+        if (editandoNumeroConEncoder && actual && actual.tagName === "INPUT") {
+          const paso = parseFloat(actual.step) || 1;
+          const min = actual.min !== "" ? parseFloat(actual.min) : -Infinity;
+          const max = actual.max !== "" ? parseFloat(actual.max) : Infinity;
+          let valor = (parseFloat(actual.value) || 0) + paso * direccion;
+          valor = Math.max(min, Math.min(max, valor));
+          actual.value = valor;
+          actual.dispatchEvent(new Event("input", { bubbles: true }));
+          return;
+        }
+
+        focoEncoderIdx = Math.max(0, Math.min(elementos.length - 1, focoEncoderIdx + direccion));
+        resaltarFocoEncoder();
+      }
+
+      function activarFocoEncoder() {
+        reiniciarFocoEncoderSiCambioDeContexto();
+        const elementos = elementosFocoEncoder();
+        if (elementos.length === 0) return;
+        const actual = elementos[focoEncoderIdx];
+        if (!actual) return;
+
+        if (actual.tagName === "INPUT") {
+          editandoNumeroConEncoder = !editandoNumeroConEncoder;
+          resaltarFocoEncoder();
+          return;
+        }
+
+        actual.click();
+      }
+
+      function navegarConEncoder(direccion) {
+        moverFocoEncoder(direccion);
+      }
+
+      // El botón del encoder confirma/activa lo que esté resaltado (ver
+      // activarFocoEncoder) — en instrucciones, eso es Anterior/Saltear/
+      // Siguiente; en el resto, niveles/números/botones de cada pantalla.
+      function confirmarConEncoder() {
+        // Mientras estás jugando (sin pausa abierta todavía), el botón del
+        // encoder pausa el test, igual que tocar el botón de pausa en
+        // pantalla. Ya pausado, navegar las 3 opciones lo maneja
+        // activarFocoEncoder() de abajo (contexto "pausa").
+        if (!document.getElementById("screen-test").hidden && document.getElementById("pause-overlay").hidden) {
+          document.getElementById("btn-pausa").click();
+          return;
+        }
+        activarFocoEncoder();
+      }
+
+      try {
+        const socketDispositivo = new WebSocket(`ws://${window.location.host}/ws/dispositivo`);
+        socketDispositivo.addEventListener("message", (event) => {
+          if (event.data === "ENCODER_DERECHA" || event.data === "ENCODER_IZQUIERDA") {
+            navegarConEncoder(event.data === "ENCODER_DERECHA" ? 1 : -1);
+            return;
+          }
+          if (event.data === "BOTON_ENCODER") {
+            confirmarConEncoder();
+            return;
+          }
+          if (!event.data.startsWith("ACEL,")) return;
+          if (pausado || testTerminado) return;
+          if (document.getElementById("screen-test").hidden) return;
+
+          const [, axTexto, ayTexto] = event.data.split(",");
+          const ax = parseFloat(axTexto);
+          const ay = parseFloat(ayTexto);
+          const clamp = (v) => Math.max(-RADIO_CONTROL, Math.min(RADIO_CONTROL, v));
+
+          offsetX = clamp((ax / ACEL_RANGO_MS2) * RADIO_CONTROL);
+          offsetY = clamp((-ay / ACEL_RANGO_MS2) * RADIO_CONTROL);
+        });
+      } catch {
+        // Si el navegador no puede abrir el WebSocket, este test no tiene
+        // forma de jugarse (no hay control por mouse).
+      }
 
       function actualizarProgreso() {
         document.getElementById("laberinto-progreso").textContent =
@@ -687,10 +779,26 @@
         animFrameId = requestAnimationFrame(loopAnim);
       }
 
+      // Manda un comando a la OLED del control físico (timer y resultados).
+      // Si el ESP32 no está conectado, falla en silencio y el test sigue
+      // igual (mismo criterio que los LEDs de N-Back).
+      async function enviarComandoDispositivo(comando) {
+        try {
+          await fetch("/api/dispositivo/comando", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comando }),
+          });
+        } catch {
+          // Sin conexión con el ESP32: no hace nada.
+        }
+      }
+
       function tickTimer() {
         if (pausado || testTerminado) return;
         tiempoRestanteSeg -= 1;
         actualizarProgreso();
+        enviarComandoDispositivo(`OLED_TIMER:${tiempoRestanteSeg}`);
         if (tiempoRestanteSeg <= 0) {
           completado = false;
           tiempoTotalMs = tiempoMaximoSeg * 1000;
@@ -722,10 +830,10 @@
         muestras = [];
         tiempoTotalMs = null;
         tiempoRestanteSeg = tiempoMaximoSeg;
+        enviarComandoDispositivo(`OLED_TIMER:${tiempoRestanteSeg}`);
 
         mostrarPantalla("screen-test");
         actualizarProgreso();
-        dibujarControl();
 
         tInicioTest = Date.now();
         clearInterval(timerInterval);
@@ -764,7 +872,7 @@
       document.getElementById("pausa-menu").addEventListener("click", () => {
         clearInterval(timerInterval);
         if (animFrameId) cancelAnimationFrame(animFrameId);
-        window.location.href = "/pages/test-detail.html?slug=laberinto";
+        window.location.href = "/pages/home.html";
       });
 
       // ===== Resultados =====
@@ -836,6 +944,10 @@
       function mostrarResultados() {
         metricasFinal = calcularMetricas();
         const m = metricasFinal;
+
+        enviarComandoDispositivo(
+          `OLED_RESULTADO:Laberinto;${m.completado ? "Completado" : "No completo"};Choques: ${m.choques}`
+        );
 
         document.getElementById("resultados-resumen").innerHTML = `
           <p><strong>Resultado:</strong> ${

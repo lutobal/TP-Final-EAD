@@ -11,3 +11,4 @@ backend/data/*.db
 # se regeneran solos al abrir firmware/ como proyecto de PlatformIO
 firmware/.pio/
 firmware/.vscode/
+.DS_Store
