@@ -158,7 +158,7 @@
       const paciente = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
 
       document.getElementById("topbar-info").textContent =
-        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"}`;
 
       document.getElementById("menu-toggle").addEventListener("click", () => {
         const menu = document.getElementById("hamburger-menu");
@@ -552,6 +552,12 @@
         const detalleIntento = detalleGlobal.filter((d) => d.intento === intentoActual + 1);
         resultadosPorIntento.push(detalleIntento.every((d) => d.correcto));
 
+        // "pausa" (no "esperando_respuesta"): si no se cambia la fase acá,
+        // un eco del botón (el ESP32 reenvia el evento cada 200ms mientras
+        // se lo mantiene apretado) llega durante esta pausa, pasa el guard
+        // de registrarRespuesta() y termina el intento siguiente sin
+        // mostrar su secuencia.
+        faseActual = "pausa";
         intentoActual += 1;
         // Pausa antes de seguir, para dar tiempo a ver en pantalla la última
         // tarjeta de respuesta antes de que se borre con el próximo patrón

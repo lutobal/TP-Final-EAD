@@ -52,7 +52,7 @@
 
       // --- Barra superior y menú (igual en todas las páginas internas) ---
       document.getElementById("topbar-info").textContent =
-        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+        `Dr./Dra. ${medico.nombre} · ${paciente ? `Paciente: ${paciente.nombre} ${paciente.apellido}` : "Sin paciente activo"}`;
 
       document.getElementById("menu-toggle").addEventListener("click", () => {
         const menu = document.getElementById("hamburger-menu");

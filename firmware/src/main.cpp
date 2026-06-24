@@ -19,7 +19,7 @@ WiFiUDP udp;
 
 
 //Seteamos los pines a los que asociamos cada componente
-int boton_rojo = 5; 
+int boton_rojo = 5;
 int boton_verde = 17;
 int boton_azul = 18;
 int boton_amarillo = 19;
@@ -33,9 +33,42 @@ unsigned long ultimoTiempoJoystick = 0;
 const unsigned long intervaloJoystickMs = 150;
 
 //Pines del encoder
-int Rot_CLK = 25; //CLK--> detecta que el encoder se movió, que hubo un paso de giro.
-int Rot_DT = 26; // DT es la referencia; comparando CLK con DT, se interpreta la dirección del giro (derecha o izquierda)
-int Rot_SW = 27; //Botón del encoder
+int Rot_CLK = 25;          //CLK--> detecta que el encoder se movió, que hubo un paso de giro.
+int Rot_DT = 26;           // DT es la referencia; comparando CLK con DT, se interpreta la dirección del giro (derecha o izquierda)
+int Rot_SW = 27;          //Botón del encoder
+
+// Estado anterior de cada boton (rojo/verde/azul/amarillo/stick/encoder) +
+// el momento del ultimo evento aceptado: sirve para detectar SOLO el
+// flanco de bajada (el instante exacto HIGH->LOW en que se aprieta), no
+// reenviar el mismo evento mientras el boton sigue apretado. Reemplaza el
+// viejo "if presionado -> delay(200)": ese delay() bloqueaba TODO loop()
+// (con el, tambien la recepcion de comandos UDP que prenden los LEDs)
+// durante 200ms cada vez que se apretaba un boton.
+const unsigned long DEBOUNCE_BOTON_MS = 30; // filtra el rebote mecanico del contacto
+int estadoAnteriorBotonRojo = HIGH;
+int estadoAnteriorBotonVerde = HIGH;
+int estadoAnteriorBotonAzul = HIGH;
+int estadoAnteriorBotonAmarillo = HIGH;
+int estadoAnteriorBotonStick = HIGH;
+int estadoAnteriorBotonEncoder = HIGH;
+unsigned long ultimoEventoBotonRojo = 0;
+unsigned long ultimoEventoBotonVerde = 0;
+unsigned long ultimoEventoBotonAzul = 0;
+unsigned long ultimoEventoBotonAmarillo = 0;
+unsigned long ultimoEventoBotonStick = 0;
+unsigned long ultimoEventoBotonEncoder = 0;
+
+// Devuelve true una sola vez por apretada real (flanco HIGH->LOW), sin
+// bloquear con delay(). Cada boton llama a esto con sus propias variables
+// de estado/tiempo (ver declaracion arriba).
+bool flancoDescendente(int pin, int &estadoAnterior, unsigned long &ultimoEvento) {
+  int estadoActual = digitalRead(pin);
+  bool disparado = (estadoActual == LOW && estadoAnterior == HIGH &&
+                     millis() - ultimoEvento > DEBOUNCE_BOTON_MS);
+  if (disparado) ultimoEvento = millis();
+  estadoAnterior = estadoActual;
+  return disparado;
+}
 
 //Lógica del encoder: cuando giras la perilla, el pin va cambiando entre high y low, se detectan los cambios y se interpreta: "Hubo un paso de giro"
 //giro a la derecha --> +1 paso. Giro a la izquierda--> -1 paso.
@@ -332,7 +365,7 @@ void setup() {
   //Boton del joystick
   pinMode(stick_Boton, INPUT);
 
-  //Encoer
+  //Encoder
   pinMode(Rot_CLK, INPUT_PULLUP);
   pinMode(Rot_DT, INPUT_PULLUP);
   pinMode(Rot_SW, INPUT_PULLUP); //Igual que los botones del LED: no apreto--> 1. Apreto--> 0.
@@ -434,50 +467,39 @@ void loop() {
     procesarComandoLED(comandoRecibido);
   }
 
-  //Lectura del los botones.
-  //Se guarda en cada variable BOTON_X el estado digital de cada botón (0: apagado, 1:encendido)
-  int BOTON_R = digitalRead(boton_rojo); 
-  int BOTON_AM = digitalRead(boton_amarillo);
-  int BOTON_AZ = digitalRead(boton_azul);
-  int BOTON_V = digitalRead(boton_verde);
-  int BOTON_ST = digitalRead(stick_Boton);
-
-  //Si apretamos el botón, manda un cero e imprime botón apretado
-  if (BOTON_R == LOW) {
+  //Lectura de los botones: flancoDescendente() dispara una sola vez por
+  //apretada real (ver su comentario mas arriba), sin bloquear loop() con
+  //delay() como antes.
+  if (flancoDescendente(boton_rojo, estadoAnteriorBotonRojo, ultimoEventoBotonRojo)) {
     Serial.println("BOTON ROJO APRETADO");
     udp.beginPacket(IP_PC, PUERTO_UDP);
     udp.print("BOTON_ROJO");
     udp.endPacket();
-    delay(200);
   }
-  if (BOTON_V == LOW) {
+  if (flancoDescendente(boton_verde, estadoAnteriorBotonVerde, ultimoEventoBotonVerde)) {
     Serial.println("BOTON VERDE APRETADO");
     udp.beginPacket(IP_PC, PUERTO_UDP);
     udp.print("BOTON_VERDE");
     udp.endPacket();
-    delay(200);
   }
-  if (BOTON_AZ == LOW) {
+  if (flancoDescendente(boton_azul, estadoAnteriorBotonAzul, ultimoEventoBotonAzul)) {
     Serial.println("BOTON AZUL APRETADO");   // Esto aparece en el Monitor Serial
     udp.beginPacket(IP_PC, PUERTO_UDP);      // Manda el UDP primero, sin esperar a la OLED
     udp.print("BOTON_AZUL");
     udp.endPacket();
     mostrarMensajeOLED("BOTON AZUL");        // Esto aparece en la OLED (mas lento, va despues)
-    delay(200);
   }
-  if (BOTON_AM == LOW) {
+  if (flancoDescendente(boton_amarillo, estadoAnteriorBotonAmarillo, ultimoEventoBotonAmarillo)) {
     Serial.println("BOTON AMARILLO APRETADO");
     udp.beginPacket(IP_PC, PUERTO_UDP);
     udp.print("BOTON_AMARILLO");
     udp.endPacket();
-    delay(200);
   }
-  if (BOTON_ST == LOW) {
+  if (flancoDescendente(stick_Boton, estadoAnteriorBotonStick, ultimoEventoBotonStick)) {
     Serial.println("BOTON STICK APRETADO");
     udp.beginPacket(IP_PC, PUERTO_UDP);
     udp.print("BOTON_STICK");
     udp.endPacket();
-    delay(200);
   }
 
   //Lectura del joystick (streaming continuo de posicion, para el test de Tracking)
@@ -531,12 +553,11 @@ void loop() {
     }
   }
 
-  if (digitalRead(Rot_SW) == LOW) {
+  if (flancoDescendente(Rot_SW, estadoAnteriorBotonEncoder, ultimoEventoBotonEncoder)) {
     Serial.println("BOTON DEL ENCODER APRETADO");
     udp.beginPacket(IP_PC, PUERTO_UDP);
     udp.print("BOTON_ENCODER");
     udp.endPacket();
-    delay(200);
   }
 
 

@@ -45,7 +45,7 @@
       const pacienteActivo = pacienteGuardado ? JSON.parse(pacienteGuardado) : null;
 
       document.getElementById("topbar-info").textContent =
-        `Dr./Dra. ${medico.nombre} · ${pacienteActivo ? `Paciente: ${pacienteActivo.nombre} ${pacienteActivo.apellido}` : "Sin paciente activo"} · Dispositivo desconectado`;
+        `Dr./Dra. ${medico.nombre} · ${pacienteActivo ? `Paciente: ${pacienteActivo.nombre} ${pacienteActivo.apellido}` : "Sin paciente activo"}`;
 
       document.getElementById("menu-toggle").addEventListener("click", () => {
         const menu = document.getElementById("hamburger-menu");
